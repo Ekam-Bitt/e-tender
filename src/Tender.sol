@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 /**
  * @title Tender
  * @notice Represents a single tender lifecycle from creation to award.
- * @dev Implements a Commit-Reveal scheme for sealed bids.
+ * @dev Implements a Commit-Reveal scheme using EIP-712 for typed structural hashing.
  */
-contract Tender {
+contract Tender is EIP712 {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -19,6 +22,7 @@ contract Tender {
     error InvalidCommitment();
     error NoValidBids();
     error AlreadyRevealed();
+    error BondForfeited();
 
     /*//////////////////////////////////////////////////////////////
                                  TYPES
@@ -33,18 +37,20 @@ contract Tender {
     }
 
     struct Bid {
-        bytes32 commitment; // Hash(amount, salt)
+        bytes32 commitment; // EIP-712 Hash
         uint256 revealedAmount;
         uint256 deposit;
         uint64 timestamp;
         bool revealed;
     }
 
+    bytes32 private constant BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
+
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     address public immutable authority;
-    string public configIpfsHash; // CID for tender specs
+    string public configIpfsHash; 
     
     // Time constraints
     uint256 public immutable biddingDeadline;
@@ -67,9 +73,10 @@ contract Tender {
     //////////////////////////////////////////////////////////////*/
     event TenderOpened(uint256 biddingDeadline, uint256 revealDeadline);
     event BidSubmitted(address indexed bidder, bytes32 commitment);
-    event BidRevealed(address indexed bidder, uint256 amount);
+    event BidRevealed(address indexed bidder, uint256 amount, bytes32 metadataHash);
     event TenderAwarded(address indexed winner, uint256 amount);
     event TenderCanceled(string reason);
+    event BondsSlashed(uint256 totalAmount);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -93,7 +100,7 @@ contract Tender {
         uint256 _biddingTime,
         uint256 _revealTime,
         uint256 _bidBondAmount
-    ) {
+    ) EIP712("Tender", "1") {
         authority = _authority;
         configIpfsHash = _configIpfsHash;
         bidBondAmount = _bidBondAmount;
@@ -108,14 +115,13 @@ contract Tender {
                             TENDER FLOW
     //////////////////////////////////////////////////////////////*/
     
-    /// @notice Opens the tender for bidding
     function openTendering() external onlyAuthority atState(TenderState.CREATED) {
         state = TenderState.OPEN;
         emit TenderOpened(biddingDeadline, revealDeadline);
     }
 
     /// @notice Submit a sealed bid (commitment)
-    /// @param _commitment Keccak256 hash of (amount, salt)
+    /// @param _commitment EIP-712 compatible hash of the bid data
     function submitBid(bytes32 _commitment) external payable atState(TenderState.OPEN) {
         if (block.timestamp >= biddingDeadline) revert InvalidTime(block.timestamp, biddingDeadline);
         if (msg.value < bidBondAmount) revert IncorrectFee();
@@ -133,11 +139,8 @@ contract Tender {
         emit BidSubmitted(msg.sender, _commitment);
     }
 
-    /// @notice Reveal a previously committed bid
-    /// @param _amount The actual bid amount
-    /// @param _salt The random salt used in commitment
-    function revealBid(uint256 _amount, bytes32 _salt) external {
-        // Automatically transition state if deadlines passed
+    /// @notice Reveal a previously committed bid using EIP-712 verification
+    function revealBid(uint256 _amount, bytes32 _salt, bytes32 _metadataHash) external {
         if (state == TenderState.OPEN && block.timestamp >= biddingDeadline) {
             state = TenderState.REVEAL_PERIOD;
         }
@@ -148,21 +151,20 @@ contract Tender {
         Bid storage bid = bids[msg.sender];
         if (bid.revealed) revert AlreadyRevealed();
         
-        // Verify commitment: keccak256(abi.encodePacked(amount, salt))
-        // Note: Using encodePacked for simple concatenation logic often used in commitments
-        if (keccak256(abi.encodePacked(_amount, _salt)) != bid.commitment) {
+        // EIP-712 Structural Hash Verification
+        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, _amount, _salt, _metadataHash));
+        bytes32 computedHash = _hashTypedDataV4(structHash);
+
+        if (computedHash != bid.commitment) {
             revert InvalidCommitment();
         }
 
         bid.revealed = true;
         bid.revealedAmount = _amount;
 
-        emit BidRevealed(msg.sender, _amount);
+        emit BidRevealed(msg.sender, _amount, _metadataHash);
     }
 
-    /// @notice Evaluate bids and select the lowest valid bidder
-    /// @dev Simple logic: Lowest Price Wins. Ties broken by timestamp (first to bid wins - wait, first to bid committed? or reveal? usually first commit if time trusted, but simple is first found).
-    /// @dev Actually, minimizing on-chain sorting loop is key. For now, O(N) linear scan is acceptable for small N.
     function evaluate() external onlyAuthority {
         if (state == TenderState.REVEAL_PERIOD && block.timestamp >= revealDeadline) {
             state = TenderState.EVALUATION;
@@ -183,6 +185,7 @@ contract Tender {
                     foundValid = true;
                 }
             }
+            // Non-revealed bids are effectively ignored here (and slashed later)
         }
 
         if (!foundValid) revert NoValidBids();
@@ -194,21 +197,55 @@ contract Tender {
         emit TenderAwarded(winner, winningAmount);
     }
     
-    /// @notice Losers can withdraw their bond. Winner has bond locked (or handled differently).
-    /// @dev For this phase, we allow everyone except winner to withdraw. Winner verification is off-chain or next step.
+    /// @notice Withdraw bond. Only allowed if revealed or canceled.
+    /// @dev If you didn't reveal, your bond is stuck until slashed/claimed by authority.
     function withdrawBond() external {
-        if (state != TenderState.AWARDED && state != TenderState.CANCELED) revert InvalidState(state, TenderState.AWARDED);
-        
-        // If canceled, everyone withdraws. If Awarded, winner cannot withdraw yet (placeholder logic).
-        if (state == TenderState.AWARDED && msg.sender == winner) {
-            revert Unauthorized(); // Winner bond stays as performance guarantee (simplified)
+        if (state == TenderState.CANCELED) {
+            // Allow everyone
+            _refund(msg.sender);
+            return;
         }
 
+        if (state != TenderState.AWARDED) revert InvalidState(state, TenderState.AWARDED);
+        
+        // Winner cannot withdraw yet
+        if (msg.sender == winner) revert Unauthorized();
+
+        // Slashing Logic: You can ONLY withdraw if you revealed.
         Bid storage bid = bids[msg.sender];
+        if (!bid.revealed) revert BondForfeited();
+
+        _refund(msg.sender);
+    }
+    
+    function _refund(address _user) internal {
+        Bid storage bid = bids[_user];
         if (bid.deposit > 0) {
             uint256 amount = bid.deposit;
             bid.deposit = 0;
-            payable(msg.sender).transfer(amount);
+            payable(_user).transfer(amount);
+        }
+    }
+
+    /// @notice Authority sweeps bonds from non-revealing bidders
+    function claimSlashedFunds() external onlyAuthority {
+        if (state != TenderState.AWARDED) revert InvalidState(state, TenderState.AWARDED);
+        
+        uint256 slashedAmount = 0;
+        for (uint256 i = 0; i < bidders.length; i++) {
+            Bid storage bid = bids[bidders[i]];
+            // If not revealed and not the winner (winner check redundant if winner implies revealed, but safe)
+            if (!bid.revealed && bidders[i] != winner) {
+                 if (bid.deposit > 0) {
+                     slashedAmount += bid.deposit;
+                     bid.deposit = 0;
+                 }
+            }
+        }
+        
+        if (slashedAmount > 0) {
+            payable(authority).transfer(slashedAmount);
+            emit BondsSlashed(slashedAmount);
         }
     }
 
@@ -216,5 +253,8 @@ contract Tender {
     function cancelTender(string calldata reason) external onlyAuthority {
         state = TenderState.CANCELED;
         emit TenderCanceled(reason);
+    }
+    function getDomainSeparator() external view returns (bytes32) {
+        return _domainSeparatorV4();
     }
 }

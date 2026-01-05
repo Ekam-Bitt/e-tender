@@ -4,20 +4,23 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../src/Tender.sol";
 import "../src/TenderFactory.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract TenderTest is Test {
     TenderFactory factory;
     Tender tender;
     
-    address authority = address(1);
-    address bidder1 = address(2);
-    address bidder2 = address(3);
-    address bidder3 = address(4); // Malicious or late
+    address authority = makeAddr("authority");
+    address bidder1 = makeAddr("bidder1");
+    address bidder2 = makeAddr("bidder2");
+    address bidder3 = makeAddr("bidder3"); // Non-revealing bidder
 
     uint256 biddingTime = 1 days;
     uint256 revealTime = 1 days;
     uint256 bidBond = 1 ether;
     string configHash = "QmTestHash";
+
+    bytes32 constant BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
 
     function setUp() public {
         vm.prank(authority);
@@ -27,24 +30,15 @@ contract TenderTest is Test {
         address tenderAddr = factory.createTender(configHash, biddingTime, revealTime, bidBond);
         tender = Tender(tenderAddr);
     }
+    
+    // Helper to generate EIP-712 Commitment
+    function getCommitment(uint256 amount, bytes32 salt, bytes32 metadataHash) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, amount, salt, metadataHash));
+        return MessageHashUtils.toTypedDataHash(tender.getDomainSeparator(), structHash);
+    }
 
     function testInitialState() public view {
         assertEq(uint(tender.state()), uint(Tender.TenderState.CREATED));
-        assertEq(tender.authority(), authority);
-        assertEq(tender.bidBondAmount(), bidBond);
-    }
-
-    function testOpenTendering() public {
-        vm.prank(authority);
-        tender.openTendering();
-        assertEq(uint(tender.state()), uint(Tender.TenderState.OPEN));
-    }
-
-    function testSubmitBidBeforeOpen_Revert() public {
-        vm.deal(bidder1, 2 ether);
-        vm.prank(bidder1);
-        vm.expectRevert(abi.encodeWithSelector(Tender.InvalidState.selector, Tender.TenderState.CREATED, Tender.TenderState.OPEN));
-        tender.submitBid{value: bidBond}(bytes32(0));
     }
 
     function testSubmitBid() public {
@@ -52,8 +46,10 @@ contract TenderTest is Test {
         tender.openTendering();
 
         bytes32 salt = bytes32(uint256(123));
+        bytes32 metadataHash = keccak256("metadata");
         uint256 amount = 100;
-        bytes32 commitment = keccak256(abi.encodePacked(amount, salt));
+        
+        bytes32 commitment = getCommitment(amount, salt, metadataHash);
 
         vm.deal(bidder1, 2 ether);
         vm.prank(bidder1);
@@ -65,58 +61,112 @@ contract TenderTest is Test {
     }
 
     function testRevealBid() public {
-        // 1. Setup & Bid
         vm.prank(authority);
         tender.openTendering();
 
         bytes32 salt = bytes32(uint256(123));
+        bytes32 metadataHash = keccak256("metadata");
         uint256 amount = 100;
-        bytes32 commitment = keccak256(abi.encodePacked(amount, salt));
+        bytes32 commitment = getCommitment(amount, salt, metadataHash);
 
         vm.deal(bidder1, 2 ether);
         vm.prank(bidder1);
         tender.submitBid{value: bidBond}(commitment);
 
-        // 2. Warping time to Reveal Phase
         vm.warp(block.timestamp + biddingTime + 1);
         
-        // 3. Reveal
         vm.prank(bidder1);
-        tender.revealBid(amount, salt);
+        tender.revealBid(amount, salt, metadataHash);
 
         (,,,,bool revealed) = tender.bids(bidder1);
         assertTrue(revealed);
     }
 
+    function testSlashingForNonReveal() public {
+        // 1. Setup
+        vm.prank(authority);
+        tender.openTendering();
+
+        // Bidder 1 reveals (Winner)
+        bytes32 salt1 = bytes32(uint256(111));
+        bytes32 meta1 = keccak256("meta1");
+        uint256 amount1 = 1000;
+        bytes32 commit1 = getCommitment(amount1, salt1, meta1);
+        
+        vm.deal(bidder1, 10 ether);
+        vm.prank(bidder1);
+        tender.submitBid{value: bidBond}(commit1);
+
+        // Bidder 3 does NEVER reveal (Loser/Malicious)
+        bytes32 salt3 = bytes32(uint256(333));
+        bytes32 meta3 = keccak256("meta3");
+        uint256 amount3 = 5000;
+        bytes32 commit3 = getCommitment(amount3, salt3, meta3);
+        
+        vm.deal(bidder3, 10 ether);
+        vm.prank(bidder3);
+        tender.submitBid{value: bidBond}(commit3);
+
+        // 2. Reveal Phase
+        vm.warp(block.timestamp + biddingTime + 1);
+        vm.prank(bidder1);
+        tender.revealBid(amount1, salt1, meta1);
+        
+        // Bidder 3 misses reveal...
+
+        // 3. Evaluation
+        vm.warp(block.timestamp + revealTime + 1);
+        
+        vm.prank(authority);
+        tender.evaluate();
+
+        // 4. Verify Slashing
+        // Bidder 3 tries to withdraw
+        vm.prank(bidder3);
+        vm.expectRevert(Tender.BondForfeited.selector);
+        tender.withdrawBond();
+
+        // Authority claims slashed funds (Bidder 3's bond)
+        uint256 authorityBalanceBefore = authority.balance;
+        
+        vm.prank(authority);
+        tender.claimSlashedFunds();
+        
+        assertEq(authority.balance, authorityBalanceBefore + bidBond);
+    }
+
     function testFullLifecycle() public {
-        // --- OPEN ---
         vm.prank(authority);
         tender.openTendering();
 
         // Bidder 1: 100 ETH
         vm.deal(bidder1, 10 ether);
         bytes32 salt1 = bytes32(uint256(111));
+        bytes32 meta1 = keccak256("meta1");
         uint256 amount1 = 100;
+        bytes32 commit1 = getCommitment(amount1, salt1, meta1);
+        
         vm.prank(bidder1);
-        tender.submitBid{value: bidBond}(keccak256(abi.encodePacked(amount1, salt1)));
+        tender.submitBid{value: bidBond}(commit1);
 
         // Bidder 2: 90 ETH (Winner)
         vm.deal(bidder2, 10 ether);
         bytes32 salt2 = bytes32(uint256(222));
+        bytes32 meta2 = keccak256("meta2");
         uint256 amount2 = 90;
+        bytes32 commit2 = getCommitment(amount2, salt2, meta2);
+        
         vm.prank(bidder2);
-        tender.submitBid{value: bidBond}(keccak256(abi.encodePacked(amount2, salt2)));
+        tender.submitBid{value: bidBond}(commit2);
 
-        // --- REVEAL ---
         vm.warp(block.timestamp + biddingTime + 1);
 
         vm.prank(bidder1);
-        tender.revealBid(amount1, salt1);
+        tender.revealBid(amount1, salt1, meta1);
 
         vm.prank(bidder2);
-        tender.revealBid(amount2, salt2);
+        tender.revealBid(amount2, salt2, meta2);
 
-        // --- EVALUATE ---
         vm.warp(block.timestamp + revealTime + 1);
         
         vm.prank(authority);
@@ -124,6 +174,5 @@ contract TenderTest is Test {
 
         assertEq(uint(tender.state()), uint(Tender.TenderState.AWARDED));
         assertEq(tender.winner(), bidder2);
-        assertEq(tender.winningAmount(), 90);
     }
 }

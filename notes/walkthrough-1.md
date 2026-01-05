@@ -4,9 +4,9 @@
 Implemented the core on-chain logic for the E-Tendering system using Solidity and Foundry. The implementation adheres to the formal state machine defined in Phase 0.
 
 ## Deliverables
-1. **[Tender.sol](file:///Users/ekambitt/Projects/e-tendering/src/Tender.sol)**: The main state machine contract.
-2. **[TenderFactory.sol](file:///Users/ekambitt/Projects/e-tendering/src/TenderFactory.sol)**: Factory to deploy new tenders.
-3. **[TenderTest.t.sol](file:///Users/ekambitt/Projects/e-tendering/test/Tender.t.sol)**: Comprehensive unit tests.
+1. **[Tender.sol](../src/Tender.sol)**: The main state machine contract.
+2. **[TenderFactory.sol](../src/TenderFactory.sol)**: Factory to deploy new tenders.
+3. **[TenderTest.t.sol](../test/Tender.t.sol)**: Comprehensive unit tests.
 
 ## Key Features Implemented
 - **Commit-Reveal Scheme**: Bidders submit `keccak256(amount, salt)` during the `OPEN` phase, ensuring bid secrecy. Matches `Bid Secrecy Leak` mitigation from Threat Model.

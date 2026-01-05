@@ -14,4 +14,11 @@
     - [x] Write Unit Tests (Foundry) <!-- id: 10 -->
     - [x] Verify Implementation against Phase 0 Specs <!-- id: 11 -->
 
-- [ ] Phase 2: Environment Setup & Tooling <!-- id: 12 -->
+- [x] Phase 2: Sealed Bidding (Commit–Reveal + Cryptography) <!-- id: 12 -->
+    - [x] Implement EIP-712 for Commitment Hashing <!-- id: 13 -->
+    - [x] Add `metadataHash` to Bid Struct and Logic <!-- id: 14 -->
+    - [x] Implement Stake Slashing for Non-Reveal <!-- id: 15 -->
+    - [x] Update Unit Tests for Cryptography and Slashing <!-- id: 16 -->
+    - [x] Verify Attack Mitigations (Front-running, etc.) <!-- id: 17 -->
+
+- [ ] Phase 3: Environment Setup & Tooling <!-- id: 18 -->
