@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import "../src/Tender.sol";
 import "../src/TenderFactory.sol";
 import "../src/identity/SignatureVerifier.sol";
+import "../src/strategies/LowestPriceStrategy.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract IdentityTest is Test {
@@ -43,9 +44,12 @@ contract IdentityTest is Test {
         vm.prank(authority);
         signatureVerifier = new SignatureVerifier(issuer);
         
+        // Strategies
+        LowestPriceStrategy priceStrategy = new LowestPriceStrategy();
+
         // Deploy Tender with Verifier
         vm.prank(authority);
-        address tenderAddr = factory.createTender(address(signatureVerifier), configHash, biddingTime, revealTime, bidBond);
+        address tenderAddr = factory.createTender(address(signatureVerifier), address(priceStrategy), configHash, biddingTime, revealTime, bidBond);
         tender = Tender(tenderAddr);
     }
 
@@ -89,9 +93,10 @@ contract IdentityTest is Test {
         // Note: Contract uses `_bidderIdFromSignal` which wraps the bytes32 signal.
         // Signal[0] is bytes32(address).
         bytes32 signalUser = bytes32(uint256(uint160(authorizedUser)));
+        // Verify storage (key is Hash(signal))
         bytes32 expectedId = keccak256(abi.encodePacked("ADDR_BIDDER", signalUser));
         
-        (bytes32 savedCommitment,,,,) = tender.bids(expectedId);
+        (bytes32 savedCommitment,,,,,) = tender.bids(expectedId);
         assertEq(savedCommitment, commit);
     }
     

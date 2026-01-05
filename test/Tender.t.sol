@@ -4,11 +4,15 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../src/Tender.sol";
 import "../src/TenderFactory.sol";
+import "../src/identity/SignatureVerifier.sol";
+import "../src/strategies/LowestPriceStrategy.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract TenderTest is Test {
     TenderFactory factory;
     Tender tender;
+    SignatureVerifier signatureVerifier;
+    LowestPriceStrategy priceStrategy;
     
     address authority = makeAddr("authority");
     address bidder1 = makeAddr("bidder1");
@@ -26,9 +30,11 @@ contract TenderTest is Test {
         vm.prank(authority);
         factory = new TenderFactory();
         
+        priceStrategy = new LowestPriceStrategy();
+
         vm.prank(authority);
-        // Pass address(0) for verifier to disable identity check in legacy tests
-        address tenderAddr = factory.createTender(address(0), configHash, biddingTime, revealTime, bidBond);
+        // Deploy Tender with default Price Strategy
+        address tenderAddr = factory.createTender(address(0), address(priceStrategy), configHash, biddingTime, revealTime, bidBond);
         tender = Tender(tenderAddr);
     }
     
@@ -63,7 +69,7 @@ contract TenderTest is Test {
         tender.submitBid{value: bidBond}(commitment, "", emptySignals);
         
         bytes32 bidderId = _getBidderId(bidder1);
-        (bytes32 savedCommitment,,,,bool revealed) = tender.bids(bidderId);
+        (bytes32 savedCommitment,,,,bool revealed,) = tender.bids(bidderId);
         assertEq(savedCommitment, commitment);
         assertFalse(revealed);
     }
@@ -86,10 +92,10 @@ contract TenderTest is Test {
         vm.warp(block.timestamp + biddingTime + 1);
         
         vm.prank(bidder1);
-        tender.revealBid(amount, salt, metadataHash);
+        tender.revealBid(amount, salt, bytes("metadata"));
 
         bytes32 bidderId = _getBidderId(bidder1);
-        (,,,,bool revealed) = tender.bids(bidderId);
+        (,,,,bool revealed,) = tender.bids(bidderId);
         assertTrue(revealed);
     }
 
@@ -121,7 +127,7 @@ contract TenderTest is Test {
         // 2. Reveal Phase
         vm.warp(block.timestamp + biddingTime + 1);
         vm.prank(bidder1);
-        tender.revealBid(amount1, salt1, meta1);
+        tender.revealBid(amount1, salt1, bytes("meta1"));
         
         // Bidder 3 misses reveal...
 
@@ -174,10 +180,10 @@ contract TenderTest is Test {
         vm.warp(block.timestamp + biddingTime + 1);
 
         vm.prank(bidder1);
-        tender.revealBid(amount1, salt1, meta1);
+        tender.revealBid(amount1, salt1, bytes("meta1"));
 
         vm.prank(bidder2);
-        tender.revealBid(amount2, salt2, meta2);
+        tender.revealBid(amount2, salt2, bytes("meta2"));
 
         vm.warp(block.timestamp + revealTime + 1);
         

@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IIdentityVerifier.sol";
+import "./interfaces/IEvaluationStrategy.sol";
 
 /**
  * @title Tender
@@ -43,6 +44,7 @@ contract Tender is EIP712 {
         uint256 deposit;
         uint64 timestamp;
         bool revealed;
+        uint256 score;
     }
 
     bytes32 private constant BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
@@ -53,6 +55,7 @@ contract Tender is EIP712 {
     
     address public immutable authority;
     IIdentityVerifier public verifier; // Identity Layer
+    IEvaluationStrategy public evaluationStrategy; // Evaluation Layer
     string public configIpfsHash; 
     
     // Time constraints
@@ -113,6 +116,7 @@ contract Tender is EIP712 {
     constructor(
         address _authority,
         address _verifier,
+        address _evaluationStrategy,
         string memory _configIpfsHash,
         uint256 _biddingTime,
         uint256 _revealTime,
@@ -120,6 +124,7 @@ contract Tender is EIP712 {
     ) EIP712("Tender", "1") {
         authority = _authority;
         verifier = IIdentityVerifier(_verifier);
+        evaluationStrategy = IEvaluationStrategy(_evaluationStrategy);
         configIpfsHash = _configIpfsHash;
         bidBondAmount = _bidBondAmount;
         
@@ -215,7 +220,8 @@ contract Tender is EIP712 {
             revealedAmount: 0,
             deposit: msg.value,
             timestamp: uint64(block.timestamp),
-            revealed: false
+            revealed: false,
+            score: 0
         });
         bidderIds.push(bidderId);
 
@@ -224,7 +230,10 @@ contract Tender is EIP712 {
 
     /// @notice Reveal a previously committed bid using EIP-712 verification
     /// @dev Assumes msg.sender maps to bidderId for this phase (Sender == Identity).
-    function revealBid(uint256 _amount, bytes32 _salt, bytes32 _metadataHash) external {
+    /// @param _amount The bid amount (e.g. price)
+    /// @param _salt The random salt used in commitment
+    /// @param _metadata The full metadata bytes (preimage of metadataHash).
+    function revealBid(uint256 _amount, bytes32 _salt, bytes calldata _metadata) external {
         if (state == TenderState.OPEN && block.timestamp >= biddingDeadline) {
             state = TenderState.REVEAL_PERIOD;
         }
@@ -239,17 +248,24 @@ contract Tender is EIP712 {
         if (bid.revealed) revert AlreadyRevealed();
         
         // EIP-712 Structural Hash Verification
-        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, _amount, _salt, _metadataHash));
+        // 1. Compute metadataHash from the revealed metadata
+        bytes32 metadataHash = keccak256(_metadata);
+        
+        // 2. Re-create the structHash that was signed/committed
+        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, _amount, _salt, metadataHash));
         bytes32 computedHash = _hashTypedDataV4(structHash);
 
         if (computedHash != bid.commitment) {
             revert InvalidCommitment();
         }
 
+        // 3. Scoring
+        bid.score = evaluationStrategy.scoreBid(_amount, _metadata);
+
         bid.revealed = true;
         bid.revealedAmount = _amount;
 
-        emit BidRevealed(bidderId, _amount, _metadataHash);
+        emit BidRevealed(bidderId, _amount, metadataHash);
     }
 
     function evaluate() external onlyAuthority {
@@ -259,27 +275,38 @@ contract Tender is EIP712 {
         if (state != TenderState.EVALUATION) revert InvalidState(state, TenderState.EVALUATION);
 
         bytes32 currentWinnerId = bytes32(0);
-        uint256 lowestBid = type(uint256).max;
-
+        
+        // Sorting Logic
+        // NOTE: On-chain sorting assumes a bounded number of bids. 
+        // Large-scale tenders should use off-chain sorting with on-chain verification.
+        bool lowerIsBetter = evaluationStrategy.isLowerBetter();
+        uint256 bestScore = lowerIsBetter ? type(uint256).max : 0;
+        
         bool foundValid = false;
 
         for (uint256 i = 0; i < bidderIds.length; i++) {
             bytes32 bId = bidderIds[i];
             Bid memory b = bids[bId];
             if (b.revealed) {
-                if (b.revealedAmount < lowestBid) {
-                    lowestBid = b.revealedAmount;
+                bool isBetter = false;
+                if (lowerIsBetter) {
+                    if (b.score < bestScore) isBetter = true;
+                } else {
+                    if (b.score > bestScore) isBetter = true;
+                }
+                
+                if (isBetter || !foundValid) {
+                    bestScore = b.score;
                     currentWinnerId = bId;
                     foundValid = true;
                 }
             }
-            // Non-revealed bids are effectively ignored here (and slashed later)
         }
 
         if (!foundValid) revert NoValidBids();
 
         winningBidderId = currentWinnerId;
-        winningAmount = lowestBid;
+        winningAmount = bids[currentWinnerId].revealedAmount;
         
         state = TenderState.AWARDED;
         emit TenderAwarded(winningBidderId, winningAmount);

@@ -35,4 +35,13 @@
     - [x] Refinement: Add ZK Safety Checks & Legacy Event <!-- id: 30 -->
     - [x] Test: Identity Replay/Reuse <!-- id: 31 -->
 
-- [ ] Phase 4: Environment Setup & Tooling <!-- id: 28 -->
+- [x] Phase 4: Automated Evaluation Engine <!-- id: 32 -->
+    - [x] Define `IEvaluationStrategy` Interface <!-- id: 33 -->
+    - [x] Implement `LowestPriceStrategy` (Simple On-Chain) <!-- id: 34 -->
+    - [x] Implement `WeightedScoreStrategy` (Complex On-Chain with Metadata Reveal) <!-- id: 35 -->
+    - [x] Refactor `Tender.sol` to use Pluggable Strategies <!-- id: 36 -->
+    - [x] Implement `revealBid` with full metadata reveal <!-- id: 37 -->
+    - [x] Test Evaluation Strategies <!-- id: 38 -->
+    - [x] Refinement: Add Security/Scalability Documentation <!-- id: 40 -->
+
+- [ ] Phase 5: Environment Setup & Tooling <!-- id: 39 -->
