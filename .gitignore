@@ -1,0 +1,17 @@
+# Foundry
+out/
+cache/
+broadcast/
+lib/
+.foundry/
+
+# Node
+node_modules/
+.env
+
+# MacOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
