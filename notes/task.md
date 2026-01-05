@@ -21,4 +21,18 @@
     - [x] Update Unit Tests for Cryptography and Slashing <!-- id: 16 -->
     - [x] Verify Attack Mitigations (Front-running, etc.) <!-- id: 17 -->
 
-- [ ] Phase 3: Environment Setup & Tooling <!-- id: 18 -->
+- [ ] Phase 3: Identity, Sybil Resistance & Access Control <!-- id: 18 -->
+    - [x] Define `IIdentityVerifier` Interface <!-- id: 19 -->
+    - [x] Implement `SignatureVerifier` (Issuer-Signed VCs) <!-- id: 20 -->
+    - [x] Implement `ZKMertkleVerifier` (Mock/Skeleton for Zero-Knowledge) <!-- id: 21 -->
+    - [x] Integrate Identity Verification into `Tender.sol` <!-- id: 22 -->
+    - [x] Implement Governance Blacklist <!-- id: 23 -->
+    - [x] Test Identity and Access Control Scenarios <!-- id: 24 -->
+    - [x] Refactor: Introduce `bidderId` and decouple `msg.sender` <!-- id: 26 -->
+    - [x] Refactor: Update `IIdentityVerifier` to `(proof, publicSignals)` <!-- id: 27 -->
+    - [x] Refinement: Domain Separate `bidderId` <!-- id: 28 -->
+    - [x] Refinement: Add Trust Model & Scope Comments <!-- id: 29 -->
+    - [x] Refinement: Add ZK Safety Checks & Legacy Event <!-- id: 30 -->
+    - [x] Test: Identity Replay/Reuse <!-- id: 31 -->
+
+- [ ] Phase 4: Environment Setup & Tooling <!-- id: 28 -->

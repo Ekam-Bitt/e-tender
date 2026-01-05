@@ -7,15 +7,14 @@ contract TenderFactory {
     event TenderContractDeployed(address indexed tenderAddress, address indexed authority);
 
     function createTender(
-        string memory _configIpfsHash,
+        address _verifier,
+        string calldata _configIpfsHash,
         uint256 _biddingTime,
         uint256 _revealTime,
         uint256 _bidBondAmount
     ) external returns (address) {
-        Tender newTender = new Tender(msg.sender, _configIpfsHash, _biddingTime, _revealTime, _bidBondAmount);
-        
-        emit TenderContractDeployed(address(newTender), msg.sender);
-        
-        return address(newTender);
+        Tender tender = new Tender(msg.sender, _verifier, _configIpfsHash, _biddingTime, _revealTime, _bidBondAmount);
+        emit TenderContractDeployed(address(tender), msg.sender);
+        return address(tender);
     }
 }
