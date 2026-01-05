@@ -6,6 +6,7 @@ import "../src/Tender.sol";
 import "../src/TenderFactory.sol";
 import "../src/identity/SignatureVerifier.sol";
 import "../src/strategies/LowestPriceStrategy.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract IdentityTest is Test {
@@ -38,8 +39,11 @@ contract IdentityTest is Test {
         (authorizedUser, authorizedUserKey) = makeAddrAndKey("authorizedUser");
 
         // Deploy Factory and Verifier
-        vm.prank(authority);
-        factory = new TenderFactory();
+        vm.startPrank(authority);
+        TenderFactory impl = new TenderFactory();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), abi.encodeCall(impl.initialize, ()));
+        factory = TenderFactory(address(proxy));
+        vm.stopPrank();
 
         vm.prank(authority);
         signatureVerifier = new SignatureVerifier(issuer);
@@ -47,9 +51,10 @@ contract IdentityTest is Test {
         // Strategies
         LowestPriceStrategy priceStrategy = new LowestPriceStrategy();
 
-        // Deploy Tender with Verifier
+        // Deploy Tender with Verifier + Challenge Period
         vm.prank(authority);
-        address tenderAddr = factory.createTender(address(signatureVerifier), address(priceStrategy), configHash, biddingTime, revealTime, bidBond);
+        uint256 challengePeriod = 1 days;
+        address tenderAddr = factory.createTender(address(signatureVerifier), address(priceStrategy), configHash, biddingTime, revealTime, challengePeriod, bidBond);
         tender = Tender(tenderAddr);
     }
 

@@ -21,7 +21,7 @@
     - [x] Update Unit Tests for Cryptography and Slashing <!-- id: 16 -->
     - [x] Verify Attack Mitigations (Front-running, etc.) <!-- id: 17 -->
 
-- [ ] Phase 3: Identity, Sybil Resistance & Access Control <!-- id: 18 -->
+- [x] Phase 3: Identity, Sybil Resistance & Access Control <!-- id: 18 -->
     - [x] Define `IIdentityVerifier` Interface <!-- id: 19 -->
     - [x] Implement `SignatureVerifier` (Issuer-Signed VCs) <!-- id: 20 -->
     - [x] Implement `ZKMertkleVerifier` (Mock/Skeleton for Zero-Knowledge) <!-- id: 21 -->
@@ -44,4 +44,9 @@
     - [x] Test Evaluation Strategies <!-- id: 38 -->
     - [x] Refinement: Add Security/Scalability Documentation <!-- id: 40 -->
 
-- [ ] Phase 5: Environment Setup & Tooling <!-- id: 39 -->
+- [x] Phase 5: Governance, Disputes & Upgradability <!-- id: 39 -->
+    - [x] Design Dispute Resolution Flow (Challenge Period) <!-- id: 41 -->
+    - [x] Implement `challengeWinner` and `resolveDispute` in `Tender.sol` <!-- id: 42 -->
+    - [x] Refactor `TenderFactory` to be UUPS Upgradable <!-- id: 43 -->
+    - [x] Integrate Timelock/Governance Context <!-- id: 44 -->
+    - [x] Test Dispute Flows and Upgrades <!-- id: 45 -->

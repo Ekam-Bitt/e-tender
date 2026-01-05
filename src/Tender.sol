@@ -5,13 +5,15 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IIdentityVerifier.sol";
 import "./interfaces/IEvaluationStrategy.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title Tender
  * @notice Represents a single tender lifecycle from creation to award.
  * @dev Implements a Commit-Reveal scheme using EIP-712 for typed structural hashing.
  */
-contract Tender is EIP712 {
+contract Tender is EIP712, Pausable {
+    using ECDSA for bytes32;
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -35,6 +37,7 @@ contract Tender is EIP712 {
         REVEAL_PERIOD,
         EVALUATION,
         AWARDED,
+        RESOLVED, // Final state after challenge period
         CANCELED
     }
 
@@ -61,6 +64,11 @@ contract Tender is EIP712 {
     // Time constraints
     uint256 public immutable biddingDeadline;
     uint256 public immutable revealDeadline;
+    uint256 public challengePeriod; // Duration
+    uint256 public challengeDeadline; // Timestamp
+    
+    // Disputes
+    Dispute[] public disputes;
     
     // Financials
     uint256 public immutable bidBondAmount;
@@ -96,6 +104,17 @@ contract Tender is EIP712 {
     event TenderCanceled(string reason);
     event BondsSlashed(uint256 totalAmount);
     event IdentityVerificationBypassed(); // Legacy/Dev mode warning
+    
+    // Dispute Events
+    event DisputeOpened(uint256 indexed disputeId, address indexed challenger, string reason);
+    event DisputeResolved(uint256 indexed disputeId, bool upheld);
+
+    struct Dispute {
+        address challenger;
+        string reason;
+        bool resolved;
+        bool upheld;
+    }
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -120,6 +139,7 @@ contract Tender is EIP712 {
         string memory _configIpfsHash,
         uint256 _biddingTime,
         uint256 _revealTime,
+        uint256 _challengePeriod,
         uint256 _bidBondAmount
     ) EIP712("Tender", "1") {
         authority = _authority;
@@ -142,6 +162,7 @@ contract Tender is EIP712 {
         
         biddingDeadline = block.timestamp + _biddingTime;
         revealDeadline = block.timestamp + _biddingTime + _revealTime;
+        challengePeriod = _challengePeriod;
         
         state = TenderState.CREATED;
     }
@@ -189,7 +210,7 @@ contract Tender is EIP712 {
         bytes32 _commitment, 
         bytes calldata _identityProof,
         bytes32[] calldata _publicSignals
-    ) external payable atState(TenderState.OPEN) {
+    ) external payable atState(TenderState.OPEN) whenNotPaused {
         bytes32 bidderId;
 
         // Identity Check
@@ -228,26 +249,37 @@ contract Tender is EIP712 {
         emit BidSubmitted(bidderId, _commitment);
     }
 
+
+
     /// @notice Reveal a previously committed bid using EIP-712 verification
     /// @dev Assumes msg.sender maps to bidderId for this phase (Sender == Identity).
     /// @param _amount The bid amount (e.g. price)
     /// @param _salt The random salt used in commitment
     /// @param _metadata The full metadata bytes (preimage of metadataHash).
-    function revealBid(uint256 _amount, bytes32 _salt, bytes calldata _metadata) external {
+    function revealBid(uint256 _amount, bytes32 _salt, bytes calldata _metadata) external whenNotPaused {
         if (state == TenderState.OPEN && block.timestamp >= biddingDeadline) {
             state = TenderState.REVEAL_PERIOD;
         }
 
         if (state != TenderState.REVEAL_PERIOD) revert InvalidState(state, TenderState.REVEAL_PERIOD);
-        if (block.timestamp >= revealDeadline) revert InvalidTime(block.timestamp, revealDeadline);
+        if (block.timestamp > revealDeadline) revert InvalidTime(block.timestamp, revealDeadline);
 
-        // Derive ID from sender using Domain Separation
-        bytes32 bidderId = _getBidderId(msg.sender);
+        bytes32 bidderId;
+        if (address(verifier) != address(0)) {
+             // If relying on Identity Certificate, we must derive ID from that.
+             // But Wait! In reveal phase, we don't present the certificate again presumably? 
+             // We rely on msg.sender? 
+             // Logic validation: How did we retrieve bidderId in revealBid? 
+             // We used _getBidderId(msg.sender).
+             // If we used Identity, _getBidderId(msg.sender) works if msg.sender is same.
+             bidderId = _getBidderId(msg.sender);
+        } else {
+             bidderId = _getBidderId(msg.sender);
+        }
 
         Bid storage bid = bids[bidderId];
         if (bid.revealed) revert AlreadyRevealed();
-        
-        // EIP-712 Structural Hash Verification
+
         // 1. Compute metadataHash from the revealed metadata
         bytes32 metadataHash = keccak256(_metadata);
         
@@ -309,21 +341,81 @@ contract Tender is EIP712 {
         winningAmount = bids[currentWinnerId].revealedAmount;
         
         state = TenderState.AWARDED;
+        challengeDeadline = block.timestamp + challengePeriod;
+        
         emit TenderAwarded(winningBidderId, winningAmount);
+    }
+
+    /// @notice Challenge the award. Requires posting a bond (same as bid bond).
+    function challengeWinner(string calldata reason) external payable atState(TenderState.AWARDED) {
+        if (block.timestamp >= challengeDeadline) revert InvalidTime(block.timestamp, challengeDeadline);
+        if (msg.value < bidBondAmount) revert IncorrectFee();
+
+        disputes.push(Dispute({
+            challenger: msg.sender,
+            reason: reason,
+            resolved: false,
+            upheld: false
+        }));
+        
+        emit DisputeOpened(disputes.length - 1, msg.sender, reason);
+    }
+    
+    function resolveDispute(uint256 disputeId, bool uphold) external onlyAuthority {
+        if (disputeId >= disputes.length) revert("Invalid dispute ID");
+        Dispute storage d = disputes[disputeId];
+        if (d.resolved) revert("Already resolved");
+        
+        d.resolved = true;
+        d.upheld = uphold;
+        
+        if (uphold) {
+            // Dispute upheld -> Tender Canceled (Simplification)
+            state = TenderState.CANCELED;
+            payable(d.challenger).transfer(bidBondAmount + bidBondAmount); // Return bond + reward? Or just bond?
+            // Actually, we need to slash the Winner's bond if they were fraudulent?
+            // For now, let's just refund challenger.
+            // And maybe the Winner loses their bond later via typical slashing logic?
+        } else {
+            // Dispute rejected -> Challenger slashed.
+            // Bond is kept in contract (to be claimed by authority).
+        }
+        
+        emit DisputeResolved(disputeId, uphold);
     }
     
     /// @notice Withdraw bond. Only allowed if revealed or canceled.
     /// @dev If you didn't reveal, your bond is stuck until slashed/claimed by authority.
-    function withdrawBond() external {
+    function withdrawBond() external whenNotPaused {
         if (state == TenderState.CANCELED) {
             // Allow everyone (who is the sender?)
             _refund(msg.sender);
             return;
         }
 
-        if (state != TenderState.AWARDED) revert InvalidState(state, TenderState.AWARDED);
+        if (state != TenderState.AWARDED && state != TenderState.RESOLVED) {
+             // If not awarded yet, can't withdraw unless canceled?
+             // Or if we are in Resolved state?
+             // Actually, after Challenge Period finishes, we can move to RESOLVED manually?
+             // Or we just stay in AWARDED but check timestamp.
+             if (state != TenderState.AWARDED) revert InvalidState(state, TenderState.AWARDED);
+        }
         
-        // Derive ID
+        // Block withdrawal if in challenge period or active disputes
+        if (block.timestamp < challengeDeadline) {
+             revert("Challenge period active");
+        }
+        
+        // Check for unresolved disputes
+        bool activeDisputes = false;
+        for(uint i=0; i<disputes.length; i++) {
+            if (!disputes[i].resolved) {
+                activeDisputes = true;
+                break;
+            }
+        }
+        if (activeDisputes) revert("Active dispute");
+        
         bytes32 bidderId = _getBidderId(msg.sender);
         
         // Winner cannot withdraw yet
@@ -376,5 +468,13 @@ contract Tender is EIP712 {
     }
     function getDomainSeparator() external view returns (bytes32) {
         return _domainSeparatorV4();
+    }
+    
+    function pause() external onlyAuthority {
+        _pause();
+    }
+    
+    function unpause() external onlyAuthority {
+        _unpause();
     }
 }

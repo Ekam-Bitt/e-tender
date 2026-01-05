@@ -7,6 +7,7 @@ import "../src/TenderFactory.sol";
 import "../src/identity/SignatureVerifier.sol";
 import "../src/strategies/LowestPriceStrategy.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract TenderTest is Test {
     TenderFactory factory;
@@ -27,15 +28,18 @@ contract TenderTest is Test {
     bytes32 constant BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
 
     function setUp() public {
-        vm.prank(authority);
-        factory = new TenderFactory();
+        vm.startPrank(authority);
+        TenderFactory impl = new TenderFactory();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), abi.encodeCall(impl.initialize, ()));
+        factory = TenderFactory(address(proxy));
         
         priceStrategy = new LowestPriceStrategy();
 
-        vm.prank(authority);
-        // Deploy Tender with default Price Strategy
-        address tenderAddr = factory.createTender(address(0), address(priceStrategy), configHash, biddingTime, revealTime, bidBond);
+        uint256 challengePeriod = 1 days;
+        address tenderAddr = factory.createTender(address(0), address(priceStrategy), configHash, biddingTime, revealTime, challengePeriod, bidBond);
         tender = Tender(tenderAddr);
+        
+        vm.stopPrank();
     }
     
     // Helper to generate EIP-712 Commitment
@@ -136,6 +140,9 @@ contract TenderTest is Test {
         
         vm.prank(authority);
         tender.evaluate();
+        
+        // Wait for challenge period to end to check forfeiture
+        vm.warp(block.timestamp + 1 days + 1); 
 
         // 4. Verify Slashing
         // Bidder 3 tries to withdraw
