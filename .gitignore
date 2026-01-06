@@ -15,3 +15,18 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+
+# Rust/Cargo (circuits/)
+circuits/target/
+circuits/Cargo.lock
+circuits/keys/
+*.proof
+*.bin
+
+# ZK ceremony files
+*.ptau
+*.zkey
+
+# Archives & Benchmarks
+.archive/
+benchmarks/

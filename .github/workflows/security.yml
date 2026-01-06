@@ -1,0 +1,28 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  invariant-tests:
+    name: Invariant Fuzz Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run invariant tests
+        run: |
+          forge test --match-path "test/invariants/*" \
+            --fuzz-runs 64 \
+            -vvv
+        continue-on-error: true

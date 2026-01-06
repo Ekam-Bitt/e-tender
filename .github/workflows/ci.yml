@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Check Solidity formatting
+        run: forge fmt --check
+        continue-on-error: true
+
+      - name: Build contracts
+        run: forge build --sizes
+
+      - name: Run unit tests
+        run: forge test --match-path "test/unit/*" -vvv
+
+      - name: Run integration tests
+        run: forge test --match-path "test/integration/*" -vvv
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Generate coverage report
+        run: forge coverage --report lcov --match-path "test/unit/*"
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./lcov.info
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  gas-report:
+    name: Gas Report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Generate gas report
+        run: forge test --match-path "test/unit/*" --gas-report > gas-report.txt
+
+      - name: Upload gas report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-report
+          path: gas-report.txt

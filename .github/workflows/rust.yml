@@ -1,0 +1,60 @@
+name: Rust ZK Circuits
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'circuits/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'circuits/**'
+
+defaults:
+  run:
+    working-directory: circuits
+
+jobs:
+  build:
+    name: Build & Test Circuits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            circuits/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('circuits/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+        continue-on-error: true
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -W clippy::all
+        continue-on-error: true
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Upload CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: range-proof-cli
+          path: circuits/target/release/range-proof-cli
+        if: success()
