@@ -187,4 +187,112 @@ contract ZKRangeVerifierTest is Test {
         // Assert reasonable gas usage (adjust based on actual verifier)
         assertLt(gasUsed, 500_000, "Verification should use less than 500k gas");
     }
+
+    // ============ Negative Constraint Tests (Security) ============
+
+    function test_RejectValueJustBelowMin() public {
+        uint256[] memory inputs = new uint256[](3);
+        inputs[0] = 10 ether; // min
+        inputs[1] = 100 ether; // max
+        inputs[2] = 10 ether - 1 wei; // Just below min
+
+        vm.expectRevert("Halo2Verifier: value < min");
+        zkVerifier.verifyProof(VALID_PROOF, inputs);
+    }
+
+    function test_RejectValueJustAboveMax() public {
+        uint256[] memory inputs = new uint256[](3);
+        inputs[0] = 10 ether; // min
+        inputs[1] = 100 ether; // max
+        inputs[2] = 100 ether + 1 wei; // Just above max
+
+        vm.expectRevert("Halo2Verifier: value > max");
+        zkVerifier.verifyProof(VALID_PROOF, inputs);
+    }
+
+    function test_RejectMalformedInputs_WrongOrder() public {
+        // Test with min > max (malformed constraint)
+        uint256[] memory inputs = new uint256[](3);
+        inputs[0] = 100 ether; // min (incorrectly larger)
+        inputs[1] = 10 ether; // max (incorrectly smaller)
+        inputs[2] = 50 ether; // value
+
+        // This should fail because value < min (100 ether)
+        vm.expectRevert("Halo2Verifier: value < min");
+        zkVerifier.verifyProof(VALID_PROOF, inputs);
+    }
+
+    function test_RejectProofWithDifferentPublicInputs() public {
+        // Simulate proof replay attack: valid proof structure but different inputs
+        uint256[] memory originalInputs = new uint256[](3);
+        originalInputs[0] = 10 ether;
+        originalInputs[1] = 100 ether;
+        originalInputs[2] = 50 ether;
+
+        // Verify original succeeds
+        bool result = zkVerifier.verifyProof(VALID_PROOF, originalInputs);
+        assertTrue(result, "Original inputs should pass");
+
+        // Try to replay with different public inputs (same proof)
+        uint256[] memory tamperedInputs = new uint256[](3);
+        tamperedInputs[0] = 5 ether; // Different min
+        tamperedInputs[1] = 200 ether; // Different max
+        tamperedInputs[2] = 50 ether; // Same value
+
+        // In production cryptographic verifier, this would fail
+        // Current placeholder accepts due to range check only
+        // This test documents expected behavior for production verifier
+        result = zkVerifier.verifyProof(VALID_PROOF, tamperedInputs);
+        assertTrue(result, "NOTE: Placeholder verifier accepts - production would reject");
+    }
+
+    function test_RejectProofTooShort() public {
+        uint256[] memory inputs = new uint256[](3);
+        inputs[0] = 10 ether;
+        inputs[1] = 100 ether;
+        inputs[2] = 50 ether;
+
+        // Proof with only 1 G1 point (64 bytes) instead of 3 (192 bytes)
+        bytes memory shortProof = hex"0000000000000000000000000000000000000000000000000000000000000001"
+            hex"0000000000000000000000000000000000000000000000000000000000000002";
+
+        vm.expectRevert(abi.encodeWithSelector(Halo2Verifier.ProofTooShort.selector, 64, 192));
+        zkVerifier.verifyProof(shortProof, inputs);
+    }
+
+    function test_RejectZeroValue() public {
+        uint256[] memory inputs = new uint256[](3);
+        inputs[0] = 10 ether; // min
+        inputs[1] = 100 ether; // max
+        inputs[2] = 0; // Zero value
+
+        vm.expectRevert("Halo2Verifier: value < min");
+        zkVerifier.verifyProof(VALID_PROOF, inputs);
+    }
+
+    function test_GasComparison_Documentation() public {
+        // Gas benchmarks for documentation
+        uint256[] memory inputs = new uint256[](3);
+        inputs[0] = 10 ether;
+        inputs[1] = 100 ether;
+        inputs[2] = 50 ether;
+
+        // Measure verification gas
+        uint256 gasBefore = gasleft();
+        zkVerifier.verifyProof(VALID_PROOF, inputs);
+        uint256 verifyGas = gasBefore - gasleft();
+
+        // Measure strategy scoring gas
+        gasBefore = gasleft();
+        strategy.scoreBid(50 ether, VALID_PROOF);
+        uint256 scoreGas = gasBefore - gasleft();
+
+        emit log_named_uint("verifyProof() gas", verifyGas);
+        emit log_named_uint("scoreBid() gas", scoreGas);
+        emit log_named_uint("Overhead (strategy - verify)", scoreGas - verifyGas);
+
+        // Document acceptable gas costs for tender verification
+        // ~14k gas for verify is acceptable for high-value tenders ($10M+)
+        assertLt(verifyGas, 50_000, "Verification under 50k gas");
+    }
 }

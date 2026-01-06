@@ -21,6 +21,10 @@ contract DeployZKVerifierScript is Script {
         uint256 minBid = 1 ether; // Minimum bid: 1 ETH
         uint256 maxBid = 100 ether; // Maximum bid: 100 ETH
 
+        // SECURITY: Prevent accidental mainnet deployment
+        // Remove this guard only after full security audit and mainnet preparation
+        require(block.chainid != 1, "Mainnet deployment not supported - remove this guard after audit");
+
         vm.startBroadcast(deployerPrivateKey);
 
         // 1. Deploy the Halo2 verifier (crypto layer)
