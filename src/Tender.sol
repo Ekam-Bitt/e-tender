@@ -6,13 +6,14 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IIdentityVerifier.sol";
 import "./interfaces/IEvaluationStrategy.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "./compliance/ComplianceModule.sol";
 
 /**
  * @title Tender
  * @notice Represents a single tender lifecycle from creation to award.
  * @dev Implements a Commit-Reveal scheme using EIP-712 for typed structural hashing.
  */
-contract Tender is EIP712, Pausable {
+contract Tender is EIP712, Pausable, ComplianceModule {
     using ECDSA for bytes32;
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -20,6 +21,82 @@ contract Tender is EIP712, Pausable {
     error Unauthorized();
     error InvalidState(TenderState current, TenderState expected);
     error InvalidTime(uint256 current, uint256 deadline);
+
+// ... (omitting unchanged parts)
+
+    constructor(
+         // ... args
+        address _authority,
+        address _verifier,
+        address _evaluationStrategy,
+        string memory _configIpfsHash,
+        uint256 _biddingTime,
+        uint256 _revealTime,
+        uint256 _challengePeriod,
+        uint256 _bidBondAmount
+    ) EIP712("Tender", "1") {
+        authority = _authority;
+        verifier = IIdentityVerifier(_verifier);
+        evaluationStrategy = IEvaluationStrategy(_evaluationStrategy);
+        configIpfsHash = _configIpfsHash;
+        bidBondAmount = _bidBondAmount;
+        
+        biddingDeadline = block.timestamp + _biddingTime;
+        revealDeadline = block.timestamp + _biddingTime + _revealTime;
+        challengePeriod = _challengePeriod;
+        
+        state = TenderState.CREATED;
+        
+        _logCompliance(REG_TENDER_CREATED, msg.sender, bytes32(uint256(uint160(address(this)))), bytes(_configIpfsHash));
+    }
+
+// ...
+
+    function submitBid(
+        bytes32 _commitment, 
+        bytes calldata _identityProof,
+        bytes32[] calldata _publicSignals
+    ) external payable atState(TenderState.OPEN) whenNotPaused {
+        bytes32 bidderId;
+
+        // Identity Check
+        if (address(verifier) != address(0)) {
+            bool authorized = verifier.verify(_identityProof, _publicSignals);
+            if (!authorized) revert Unauthorized();
+            
+            // Decoupling: Use wrapped signal as ID.
+            if (_publicSignals.length > 0) {
+                 // For SignatureVerifier, signal[0] is the address. Wrapping it matches _getBidderId(addr).
+                 bidderId = _bidderIdFromSignal(_publicSignals[0]);
+            } else {
+                 // Fallback should not happen with valid verifiers, but if it does:
+                 bidderId = _getBidderId(msg.sender);
+            }
+        } else {
+            // Public Tender
+            emit IdentityVerificationBypassed();
+            bidderId = _getBidderId(msg.sender);
+        }
+
+        if (block.timestamp >= biddingDeadline) revert InvalidTime(block.timestamp, biddingDeadline);
+        if (msg.value < bidBondAmount) revert IncorrectFee();
+        if (bids[bidderId].commitment != bytes32(0)) revert BidAlreadyExists();
+
+        bids[bidderId] = Bid({
+            commitment: _commitment,
+            revealedAmount: 0,
+            deposit: msg.value,
+            timestamp: uint64(block.timestamp),
+            revealed: false,
+            score: 0
+        });
+        bidderIds.push(bidderId);
+
+        emit BidSubmitted(bidderId, _commitment);
+        
+        _logCompliance(REG_BID_SUBMITTED, msg.sender, bidderId, abi.encode(_commitment));
+    }
+
     error IncorrectFee();
     error BidAlreadyExists();
     error BidNotRevealed();
@@ -129,43 +206,7 @@ contract Tender is EIP712, Pausable {
         _;
     }
 
-    /*//////////////////////////////////////////////////////////////
-                               CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
-    constructor(
-        address _authority,
-        address _verifier,
-        address _evaluationStrategy,
-        string memory _configIpfsHash,
-        uint256 _biddingTime,
-        uint256 _revealTime,
-        uint256 _challengePeriod,
-        uint256 _bidBondAmount
-    ) EIP712("Tender", "1") {
-        authority = _authority;
-        verifier = IIdentityVerifier(_verifier);
-        evaluationStrategy = IEvaluationStrategy(_evaluationStrategy);
-        configIpfsHash = _configIpfsHash;
-        bidBondAmount = _bidBondAmount;
-        
-        if (_verifier != address(0)) {
-            // IdentityType comes from Verifier (e.g. "ISSUER_SIGNATURE")
-             try IIdentityVerifier(_verifier).identityType() returns (bytes32 _type) {
-                 // Optimization: We could store this. 
-                 // But since it's pure, we can just read it dynamically or assume it's set.
-                 // Let's assume we want to log it?
-                 // Actually, let's just leave it for external introspection via the verifier address.
-             } catch {
-                 // Ignore if not implemented (safety)
-             }
-        }
-        
-        biddingDeadline = block.timestamp + _biddingTime;
-        revealDeadline = block.timestamp + _biddingTime + _revealTime;
-        challengePeriod = _challengePeriod;
-        
-        state = TenderState.CREATED;
-    }
+
     
     /// @notice Returns the Identity Type of the current configuration
     function getIdentityType() external view returns (bytes32) {
@@ -202,52 +243,7 @@ contract Tender is EIP712, Pausable {
         return keccak256(abi.encodePacked("ADDR_BIDDER", _signal));
     }
 
-    /// @notice Submit a sealed bid (commitment) with Identity Proof
-    /// @param _commitment EIP-712 compatible hash of the bid data
-    /// @param _identityProof Proof for IIdentityVerifier (Signature or ZK Proof)
-    /// @param _publicSignals Signals for Verifier (e.g. [userAddress] or [nullifier])
-    function submitBid(
-        bytes32 _commitment, 
-        bytes calldata _identityProof,
-        bytes32[] calldata _publicSignals
-    ) external payable atState(TenderState.OPEN) whenNotPaused {
-        bytes32 bidderId;
 
-        // Identity Check
-        if (address(verifier) != address(0)) {
-            bool authorized = verifier.verify(_identityProof, _publicSignals);
-            if (!authorized) revert Unauthorized();
-            
-            // Decoupling: Use wrapped signal as ID.
-            if (_publicSignals.length > 0) {
-                 // For SignatureVerifier, signal[0] is the address. Wrapping it matches _getBidderId(addr).
-                 bidderId = _bidderIdFromSignal(_publicSignals[0]);
-            } else {
-                 // Fallback should not happen with valid verifiers, but if it does:
-                 bidderId = _getBidderId(msg.sender);
-            }
-        } else {
-            // Public Tender
-            emit IdentityVerificationBypassed();
-            bidderId = _getBidderId(msg.sender);
-        }
-
-        if (block.timestamp >= biddingDeadline) revert InvalidTime(block.timestamp, biddingDeadline);
-        if (msg.value < bidBondAmount) revert IncorrectFee();
-        if (bids[bidderId].commitment != bytes32(0)) revert BidAlreadyExists();
-
-        bids[bidderId] = Bid({
-            commitment: _commitment,
-            revealedAmount: 0,
-            deposit: msg.value,
-            timestamp: uint64(block.timestamp),
-            revealed: false,
-            score: 0
-        });
-        bidderIds.push(bidderId);
-
-        emit BidSubmitted(bidderId, _commitment);
-    }
 
 
 
@@ -298,6 +294,8 @@ contract Tender is EIP712, Pausable {
         bid.revealedAmount = _amount;
 
         emit BidRevealed(bidderId, _amount, metadataHash);
+        
+        _logCompliance(REG_BID_REVEALED, msg.sender, bidderId, abi.encode(_amount));
     }
 
     function evaluate() external onlyAuthority {
@@ -359,6 +357,8 @@ contract Tender is EIP712, Pausable {
         }));
         
         emit DisputeOpened(disputes.length - 1, msg.sender, reason);
+        
+        _logCompliance(REG_DISPUTE_OPENED, msg.sender, bytes32(disputes.length - 1), bytes(reason));
     }
     
     function resolveDispute(uint256 disputeId, bool uphold) external onlyAuthority {
