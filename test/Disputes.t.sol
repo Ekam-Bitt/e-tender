@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Test.sol";
-import "../src/Tender.sol";
-import "../src/TenderFactory.sol";
-import "../src/identity/SignatureVerifier.sol";
-import "../src/strategies/LowestPriceStrategy.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Test} from "forge-std/Test.sol";
+import {Tender} from "../contracts/Tender.sol";
+import {TenderFactory} from "../contracts/TenderFactory.sol";
+// import {SignatureVerifier} from "../contracts/identity/SignatureVerifier.sol";
+import {
+    LowestPriceStrategy
+} from "../contracts/strategies/LowestPriceStrategy.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {
+    MessageHashUtils
+} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract DisputesTest is Test {
     TenderFactory factory;
@@ -22,16 +28,27 @@ contract DisputesTest is Test {
     uint256 revealTime = 1 days;
     uint256 challengePeriod = 3 days;
     uint256 bidBond = 1 ether;
-    
+
     function setUp() public {
         vm.startPrank(authority);
         TenderFactory impl = new TenderFactory();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), abi.encodeCall(impl.initialize, ()));
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(impl.initialize, ())
+        );
         factory = TenderFactory(address(proxy));
-        
+
         priceStrategy = new LowestPriceStrategy();
-        
-        address tenderAddr = factory.createTender(address(0), address(priceStrategy), "QmConfig", biddingTime, revealTime, challengePeriod, bidBond);
+
+        address tenderAddr = factory.createTender(
+            address(0),
+            address(priceStrategy),
+            "QmConfig",
+            biddingTime,
+            revealTime,
+            challengePeriod,
+            bidBond
+        );
         tender = Tender(tenderAddr);
         vm.stopPrank();
 
@@ -44,9 +61,9 @@ contract DisputesTest is Test {
         bytes32 salt = keccak256("salt1");
         bytes memory metadata = bytes("meta1");
         bytes32 metadataHash = keccak256(metadata);
-        
+
         bytes32 commitment = getCommitment(1 ether, salt, metadataHash);
-        
+
         vm.prank(bidder1);
         tender.submitBid{value: bidBond}(commitment, "", new bytes32[](0));
 
@@ -60,13 +77,25 @@ contract DisputesTest is Test {
         tender.evaluate();
     }
 
-    function getCommitment(uint256 amount, bytes32 salt, bytes32 metadataHash) internal view returns (bytes32) {
-        bytes32 BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
-        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, amount, salt, metadataHash));
-        return MessageHashUtils.toTypedDataHash(tender.getDomainSeparator(), structHash);
+    function getCommitment(
+        uint256 amount,
+        bytes32 salt,
+        bytes32 metadataHash
+    ) internal view returns (bytes32) {
+        bytes32 bidTypehash = keccak256(
+            "Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)"
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(bidTypehash, amount, salt, metadataHash)
+        );
+        return
+            MessageHashUtils.toTypedDataHash(
+                tender.getDomainSeparator(),
+                structHash
+            );
     }
 
-    function testChallengePeriod_BlockingWithdrawal() public {
+    function testChallengePeriod_BlockingWithdrawal() public view {
         // Winner cannot withdraw immediately (Tender checks challenge deadline + winner logic)
         // Check regular user (if there was one) or logic
         // Mainly checking state is AWARDED
@@ -75,11 +104,11 @@ contract DisputesTest is Test {
 
     function testFrivolousChallenge() public {
         vm.deal(challenger, 5 ether);
-        
+
         vm.prank(challenger);
         tender.challengeWinner{value: bidBond}("He is a unrelated bad actor");
-        
-        (address actualChallenger,, bool resolved, bool upheld) = tender.disputes(0);
+
+        (address actualChallenger, , bool resolved, ) = tender.disputes(0);
         assertEq(actualChallenger, challenger);
         assertFalse(resolved);
 
@@ -90,10 +119,10 @@ contract DisputesTest is Test {
         (, , bool resolved2, bool upheld2) = tender.disputes(0);
         assertTrue(resolved2);
         assertFalse(upheld2);
-        
+
         // Tender should still be AWARDED (or RESOLVED? Code doesn't auto-transition to RESOLVED yet, stays AWARDED)
         assertEq(uint(tender.state()), uint(Tender.TenderState.AWARDED));
-        
+
         // Challenger funds presumed stuck in contract (Slashed)
         // Challenger balance should be 5 - 1 = 4
         assertEq(challenger.balance, 4 ether);
@@ -127,6 +156,10 @@ contract DisputesTest is Test {
         // Wait until challenge period over
         vm.warp(block.timestamp + challengePeriod + 1);
 
+        // Transition to RESOLVED first
+        tender.finalize();
+        assertEq(uint(tender.state()), uint(Tender.TenderState.RESOLVED));
+
         // Currently logic: winner cannot withdraw via withdrawBond (logic says if winner -> unauthorized).
         // Winner gets paid via what?
         // Ah, `evaluate` sets `winningAmount` but doesn't transfer.
@@ -136,7 +169,7 @@ contract DisputesTest is Test {
         // Where does winner get paid?
         // Wait, did I miss a payout function?
         // Original `evaluate` just emits TenderAwarded.
-        // It doesn't pay out. 
+        // It doesn't pay out.
         // We probably need a `claimWinnings` function?
         // Or `withdrawBond` should handle it?
         // In this architecture, usually "Awarded" means the bond is returned + maybe down payment?
@@ -146,7 +179,7 @@ contract DisputesTest is Test {
         // The winner withdraws bond only after ... completion?
         // We haven't implemented "Project Completion".
         // So for now, we verify Winner CANNOT withdraw bond.
-        
+
         vm.prank(bidder1);
         vm.expectRevert(abi.encodeWithSignature("Unauthorized()"));
         tender.withdrawBond();

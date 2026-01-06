@@ -71,6 +71,8 @@
     - [x] Compliance <!-- id: 62 -->
         - [x] Feature: Regulatory Audit Trail (Events) <!-- id: 63 -->
 
-- [ ] Phase 8: Production Deployment & Polish <!-- id: 64 -->
-    - [ ] Script: Deployment (`Deploy.s.sol`) <!-- id: 65 -->
-    - [ ] Documentation: Final Report <!-- id: 66 -->
+- [x] Phase 8: Production Deployment & Polish <!-- id: 64 -->
+    - [x] Script: Deployment (`Deploy.s.sol`) <!-- id: 65 -->
+    - [x] Documentation: Final Report (`final-report.md`) <!-- id: 66 -->
+    - [x] Polish: Standardization & README (`/contracts`, `/docs`, etc.) <!-- id: 67 -->
+    - [x] Refinement: Recruiter-Ready README & Protocol Summary <!-- id: 68 -->

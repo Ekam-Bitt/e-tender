@@ -33,13 +33,23 @@ The `Tender` contract drives the core logic. It follows a strict unidirectional 
 
 6. **`AWARDED`**
    - The winner is selected.
+   - **Challenge Period Starts**: Users can open disputes.
    - **Actions**:
-     - Winner's bond is effectively locked/converted (or returned depending on logic).
-     - Losers can withdraw their Bid Bonds.
+     - `challengeWinner()`: Opens a dispute.
+   - **Transitions**:
+     - -> `RESOLVED`: After challenge period ends with no successful disputes.
+     - -> `CANCELED`: If a dispute is upheld.
+
+7. **`RESOLVED`**
+   - Challenge period over, or disputes dismissed.
+   - **Actions**:
+     - `withdrawBond()`: Losers withdraw bonds.
+     - Winner claims payout (implicit in logic or manual claim).
    - **Final State**.
 
-7. **`CANCELED`**
+8. **`CANCELED`**
    - Available from `OPEN` or `REVEAL_PERIOD` if Authority cancels (emergency).
+   - Also reached from `AWARDED` if a dispute is upheld (`resolveDispute(true)`).
    - All bonds refundable.
    - **Final State**.
 
@@ -72,11 +82,19 @@ stateDiagram-v2
     EVALUATION --> AWARDED : Finalize
     EVALUATION --> DRAW : No valid bids / Tie (requires logic)
 
+    state AWARDED {
+        [*] --> ChallengePeriod
+        ChallengePeriod --> DisputeOpened : challengeWinner()
+    }
+
+    AWARDED --> RESOLVED : Challenge Period End / Dispute Rejected
+    AWARDED --> CANCELED : Dispute Upheld
+
     OPEN --> CANCELED : emergencyCancel()
     REVEAL_PERIOD --> CANCELED : emergencyCancel()
     EVALUATION --> CANCELED : emergencyCancel()
 
-    AWARDED --> [*]
+    RESOLVED --> [*]
     CANCELED --> [*]
 ```
 

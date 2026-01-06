@@ -1,66 +1,49 @@
-## Foundry
+# Decentralized E-Tendering Protocol
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## Abstract
+This protocol solves the problem of **corporate espionage and corruption in high-value procurement**. 
 
-Foundry consists of:
+In traditional systems, trusted intermediaries (auctioneers) can leak bid prices to favored parties or censor submissions. This decentralized protocol eliminates the need for blind trust by securely handling **$10M+ tenders** entirely on-chain. It uses **Commit-Reveal Cryptography** to keep bids secret until the deadline and **Zero-Knowledge / Identity Primitives** to ensure only authorized entities participate, proving that **fairness can be mathematically enforced**.
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+## Architecture Overview
+The system is modeled as a rigorous State Machine, ensuring that tenders move irreversibly through valid states (`Open` -> `Reveal` -> `Awarded`).
+- [View State Machine Diagram](specs/state-machine.md)
 
-## Documentation
+## Security Model
+We operate under a tailored threat model that explicitly addresses specific attack vectors while acknowledging accepted risks.
+- [View Threat Model](threat-model/threat-model.md)
 
-https://book.getfoundry.sh/
+### What attacks does this prevent?
+1.  **Bid Leakage**: Competitors cannot see prices before the reveal deadline (EIP-712 Commitments).
+2.  **Front-Running**: MEV bots cannot copy-cat bids due to salted hashes.
+3.  **Retroactive Bidding**: No one (including Admins) can insert bids after the block time deadline.
+4.  **Sybil Attacks**: Identity Verifiers ensure 1-entity-1-bid (or authorized-only).
 
-## Usage
+### What attacks does it accept?
+1.  **L1 DoS**: We assume the underlying chain remains live.
+2.  **Collusion**: Bidders can still form off-chain cartels; the protocol ensures *process* integrity, not *social* integrity.
 
-### Build
+## Protocol Phases
+The development followed a phased, industrial approach:
 
-```shell
-$ forge build
-```
+- **Phase 1: Core Lifecycle**: Implemented the `Tender` state machine and Factory.
+- **Phase 2: Commit–Reveal**: Added EIP-712 hashing to seal bids.
+- **Phase 3: Identity**: Integrated pluggable `IIdentityVerifier` for Sybil resistance.
+- **Phase 4: Optimization**: Abstracted logic into `IEvaluationStrategy` (Lowest Price, Weighted Score).
+- **Phase 5: Governance**: Added Dispute Resolution (Bonded Challenges) & UUPS Upgradability.
+- **Phase 6: Adversarial Testing**: Validated against MEV and Timestamp attacks via simulations.
 
-### Test
+## Formal Verification & Testing
+We went beyond unit tests, using **Stateless & Stateful Fuzzing** to prove system invariants.
+- [View Formal Invariants](formal-invariants/)
 
-```shell
-$ forge test
-```
+**Key Invariants Proved**:
+- **Solvency**: The contract never holds less ETH than the sum of active deposits.
+- **State Monotonicity**: A tender never reverts to a previous state.
 
-### Format
+## Disclaimer & Trust Assumptions
+This is research-grade software. While rigorously tested, it relies on specific assumptions about the underlying Identity Oracle and L1 consensus.
+- [View Assumptions](specs/assumptions_trust.md)
 
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+---
+*Built with Foundry. Verified on Ethereum Sepolia.*
