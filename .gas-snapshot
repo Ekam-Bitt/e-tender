@@ -1,0 +1,5 @@
+TenderTest:testFullLifecycle() (gas: 460789)
+TenderTest:testInitialState() (gas: 7810)
+TenderTest:testRevealBid() (gas: 226082)
+TenderTest:testSlashingForNonReveal() (gas: 409015)
+TenderTest:testSubmitBid() (gas: 171804)

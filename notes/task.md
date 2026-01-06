@@ -50,3 +50,14 @@
     - [x] Refactor `TenderFactory` to be UUPS Upgradable <!-- id: 43 -->
     - [x] Integrate Timelock/Governance Context <!-- id: 44 -->
     - [x] Test Dispute Flows and Upgrades <!-- id: 45 -->
+
+- [x] Phase 6: Security Analysis & Adversarial Testing <!-- id: 46 -->
+    - [x] Create Invariant Test Suite (`test/invariants/`) <!-- id: 47 -->
+        - [x] Invariant: Solvency (Balance tracking) <!-- id: 48 -->
+        - [x] Invariant: State Transitions (Monotonicity) <!-- id: 49 -->
+    - [x] Perform Fuzz Testing <!-- id: 50 -->
+        - [x] Fuzz: Bid Submission & Reveal flows <!-- id: 51 -->
+    - [x] Simulate Threats <!-- id: 52 -->
+        - [x] Simulation: Timestamp Manipulation <!-- id: 53 -->
+        - [x] Simulation: MEV/Front-running <!-- id: 54 -->
+    - [x] Benchmarking (Gas/Latency) <!-- id: 55 -->
