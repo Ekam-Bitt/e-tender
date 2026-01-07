@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { IIdentityVerifier } from "src/interfaces/IIdentityVerifier.sol";
-import { IEvaluationStrategy } from "src/interfaces/IEvaluationStrategy.sol";
-import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
-import { ComplianceModule } from "src/compliance/ComplianceModule.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {IIdentityVerifier} from "src/interfaces/IIdentityVerifier.sol";
+import {IEvaluationStrategy} from "src/interfaces/IEvaluationStrategy.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ComplianceModule} from "src/compliance/ComplianceModule.sol";
 
 /**
  * @title Tender
@@ -47,17 +47,21 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
         state = TenderState.CREATED;
 
-        _logCompliance(REG_TENDER_CREATED, msg.sender, bytes32(uint256(uint160(address(this)))), bytes(_configIpfsHash));
+        _logCompliance(
+            REG_TENDER_CREATED,
+            msg.sender,
+            bytes32(uint256(uint160(address(this)))),
+            bytes(_configIpfsHash)
+        );
     }
 
     // ...
 
-    function submitBid(bytes32 _commitment, bytes calldata _identityProof, bytes32[] calldata _publicSignals)
-        external
-        payable
-        atState(TenderState.OPEN)
-        whenNotPaused
-    {
+    function submitBid(
+        bytes32 _commitment,
+        bytes calldata _identityProof,
+        bytes32[] calldata _publicSignals
+    ) external payable atState(TenderState.OPEN) whenNotPaused {
         bytes32 bidderId;
 
         // Identity Check
@@ -97,7 +101,12 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
         emit BidSubmitted(bidderId, _commitment);
 
-        _logCompliance(REG_BID_SUBMITTED, msg.sender, bidderId, abi.encode(_commitment));
+        _logCompliance(
+            REG_BID_SUBMITTED,
+            msg.sender,
+            bidderId,
+            abi.encode(_commitment)
+        );
     }
 
     error IncorrectFee();
@@ -130,7 +139,8 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         uint256 score;
     }
 
-    bytes32 private constant BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
+    bytes32 private constant BID_TYPEHASH =
+        keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -141,7 +151,6 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     IEvaluationStrategy public evaluationStrategy; // Evaluation Layer
     string public configIpfsHash;
 
-    // Time constraints
     // Time constraints
     uint256 public immutable BIDDING_DEADLINE;
     uint256 public immutable REVEAL_DEADLINE;
@@ -156,17 +165,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
     // State
     TenderState public state;
-    address public winner; // Address of winner for payout (still needs an address)
-    // OR better: winnerBidderId?
-    // User requirement: "msg.sender still pays gas".
-    // "One bid per bidderId"
-    // We can keep `address public winner` if we assume the bidderId maps to an address eventually,
-    // OR winner is just the address that successfully claimed the winning bid.
-    // Let's keep `address winner` as the "payout destination" or "controller".
-    // Actually, `evaluate` sets `winner`. If Bids are keyed by ID, we need to store who owns that ID?
-    // Or just store the winning `bidderId`.
-    // Let's stick to: we map `bytes32 bidderId => Bid`.
-    // We also track `address[] public bidders`? No, `bytes32[] public bidderIds`.
+    address public winner; // Address of winner for payout
 
     bytes32 public winningBidderId;
     uint256 public winningAmount;
@@ -178,16 +177,28 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-    event TenderOpened(uint256 biddingDeadline, uint256 revealDeadline, bytes32 identityType);
+    event TenderOpened(
+        uint256 biddingDeadline,
+        uint256 revealDeadline,
+        bytes32 identityType
+    );
     event BidSubmitted(bytes32 indexed bidderId, bytes32 commitment);
-    event BidRevealed(bytes32 indexed bidderId, uint256 amount, bytes32 metadataHash);
+    event BidRevealed(
+        bytes32 indexed bidderId,
+        uint256 amount,
+        bytes32 metadataHash
+    );
     event TenderAwarded(bytes32 indexed winnerId, uint256 amount);
     event TenderCanceled(string reason);
     event BondsSlashed(uint256 totalAmount);
     event IdentityVerificationBypassed(); // Legacy/Dev mode warning
 
     // Dispute Events
-    event DisputeOpened(uint256 indexed disputeId, address indexed challenger, string reason);
+    event DisputeOpened(
+        uint256 indexed disputeId,
+        address indexed challenger,
+        string reason
+    );
     event DisputeResolved(uint256 indexed disputeId, bool upheld);
     event TenderResolved();
 
@@ -231,7 +242,11 @@ contract Tender is EIP712, Pausable, ComplianceModule {
                             TENDER FLOW
     //////////////////////////////////////////////////////////////*/
 
-    function openTendering() external onlyAuthority atState(TenderState.CREATED) {
+    function openTendering()
+        external
+        onlyAuthority
+        atState(TenderState.CREATED)
+    {
         state = TenderState.OPEN;
 
         // Emit Identity Info for Indexers
@@ -245,12 +260,16 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
     /// @dev Internal helper to enforce domain separation on Bidder IDs
     function _getBidderId(address _user) internal pure returns (bytes32) {
+        // keccak256(abi.encodePacked) is used for readability and standard EIP-712 compliance.
         return keccak256(abi.encodePacked("ADDR_BIDDER", _user));
     }
 
     /// @dev Internal helper for wrapping verified signals
     /// @notice Unifies ID generation for Verified (Simulated) and Public modes
-    function _bidderIdFromSignal(bytes32 _signal) internal pure returns (bytes32) {
+    function _bidderIdFromSignal(
+        bytes32 _signal
+    ) internal pure returns (bytes32) {
+        // keccak256(abi.encodePacked) is used for readability and standard EIP-712 compliance.
         return keccak256(abi.encodePacked("ADDR_BIDDER", _signal));
     }
 
@@ -259,7 +278,11 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     /// @param _amount The bid amount (e.g. price)
     /// @param _salt The random salt used in commitment
     /// @param _metadata The full metadata bytes (preimage of metadataHash).
-    function revealBid(uint256 _amount, bytes32 _salt, bytes calldata _metadata) external whenNotPaused {
+    function revealBid(
+        uint256 _amount,
+        bytes32 _salt,
+        bytes calldata _metadata
+    ) external whenNotPaused {
         if (state == TenderState.OPEN && block.timestamp >= BIDDING_DEADLINE) {
             state = TenderState.REVEAL_PERIOD;
         }
@@ -288,10 +311,14 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         if (bid.revealed) revert AlreadyRevealed();
 
         // 1. Compute metadataHash from the revealed metadata
+        // Using high-level keccak256 for readability and maintenance.
         bytes32 metadataHash = keccak256(_metadata);
 
         // 2. Re-create the structHash that was signed/committed
-        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, _amount, _salt, metadataHash));
+        // Using abi.encode for EIP-712 structural integrity.
+        bytes32 structHash = keccak256(
+            abi.encode(BID_TYPEHASH, _amount, _salt, metadataHash)
+        );
         bytes32 computedHash = _hashTypedDataV4(structHash);
 
         if (computedHash != bid.commitment) {
@@ -306,11 +333,19 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
         emit BidRevealed(bidderId, _amount, metadataHash);
 
-        _logCompliance(REG_BID_REVEALED, msg.sender, bidderId, abi.encode(_amount));
+        _logCompliance(
+            REG_BID_REVEALED,
+            msg.sender,
+            bidderId,
+            abi.encode(_amount)
+        );
     }
 
     function evaluate() external onlyAuthority {
-        if (state == TenderState.REVEAL_PERIOD && block.timestamp >= REVEAL_DEADLINE) {
+        if (
+            state == TenderState.REVEAL_PERIOD &&
+            block.timestamp >= REVEAL_DEADLINE
+        ) {
             state = TenderState.EVALUATION;
         }
         if (state != TenderState.EVALUATION) {
@@ -358,20 +393,37 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     }
 
     /// @notice Challenge the award. Requires posting a bond (same as bid bond).
-    function challengeWinner(string calldata reason) external payable atState(TenderState.AWARDED) {
+    function challengeWinner(
+        string calldata reason
+    ) external payable atState(TenderState.AWARDED) {
         if (block.timestamp >= challengeDeadline) {
             revert InvalidTime(block.timestamp, challengeDeadline);
         }
         if (msg.value < BID_BOND_AMOUNT) revert IncorrectFee();
 
-        disputes.push(Dispute({ challenger: msg.sender, reason: reason, resolved: false, upheld: false }));
+        disputes.push(
+            Dispute({
+                challenger: msg.sender,
+                reason: reason,
+                resolved: false,
+                upheld: false
+            })
+        );
 
         emit DisputeOpened(disputes.length - 1, msg.sender, reason);
 
-        _logCompliance(REG_DISPUTE_OPENED, msg.sender, bytes32(disputes.length - 1), bytes(reason));
+        _logCompliance(
+            REG_DISPUTE_OPENED,
+            msg.sender,
+            bytes32(disputes.length - 1),
+            bytes(reason)
+        );
     }
 
-    function resolveDispute(uint256 disputeId, bool uphold) external onlyAuthority {
+    function resolveDispute(
+        uint256 disputeId,
+        bool uphold
+    ) external onlyAuthority {
         if (disputeId >= disputes.length) revert("Invalid dispute ID");
         Dispute storage d = disputes[disputeId];
         if (d.resolved) revert("Already resolved");

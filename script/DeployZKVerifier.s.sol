@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Script.sol";
-import { Halo2Verifier } from "src/crypto/Halo2Verifier.sol";
-import { ZKRangeVerifier } from "src/crypto/ZKRangeVerifier.sol";
-import { ZKAuctionStrategy } from "src/strategies/ZKAuctionStrategy.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {Halo2Verifier} from "src/crypto/Halo2Verifier.sol";
+import {ZKRangeVerifier} from "src/crypto/ZKRangeVerifier.sol";
+import {ZKAuctionStrategy} from "src/strategies/ZKAuctionStrategy.sol";
 
 /**
  * @title DeployZKVerifier
@@ -23,7 +23,10 @@ contract DeployZKVerifierScript is Script {
 
         // SECURITY: Prevent accidental mainnet deployment
         // Remove this guard only after full security audit and mainnet preparation
-        require(block.chainid != 1, "Mainnet deployment not supported - remove this guard after audit");
+        require(
+            block.chainid != 1,
+            "Mainnet deployment not supported - remove this guard after audit"
+        );
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -32,11 +35,17 @@ contract DeployZKVerifierScript is Script {
         console.log("Halo2Verifier deployed at:", address(halo2Verifier));
 
         // 2. Deploy the adapter (maintains backward compatibility)
-        ZKRangeVerifier zkRangeVerifier = new ZKRangeVerifier(address(halo2Verifier));
+        ZKRangeVerifier zkRangeVerifier = new ZKRangeVerifier(
+            address(halo2Verifier)
+        );
         console.log("ZKRangeVerifier deployed at:", address(zkRangeVerifier));
 
         // 3. Deploy the auction strategy using the verifier
-        ZKAuctionStrategy zkStrategy = new ZKAuctionStrategy(address(zkRangeVerifier), minBid, maxBid);
+        ZKAuctionStrategy zkStrategy = new ZKAuctionStrategy(
+            address(zkRangeVerifier),
+            minBid,
+            maxBid
+        );
         console.log("ZKAuctionStrategy deployed at:", address(zkStrategy));
 
         vm.stopBroadcast();

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Test } from "forge-std/Test.sol";
-import { Tender } from "src/core/Tender.sol";
-import { TenderFactory } from "src/core/TenderFactory.sol";
-import { LowestPriceStrategy } from "src/strategies/LowestPriceStrategy.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Test} from "forge-std/Test.sol";
+import {Tender} from "src/core/Tender.sol";
+import {TenderFactory} from "src/core/TenderFactory.sol";
+import {LowestPriceStrategy} from "src/strategies/LowestPriceStrategy.sol";
+import {
+    MessageHashUtils
+} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract TenderHandler is Test {
     Tender public tender;
@@ -52,14 +53,23 @@ contract TenderHandler is Test {
 
         // Generate Commitment
         bytes32 metadataHash = keccak256("meta");
-        bytes32 BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
-        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, amount, salt, metadataHash));
-        bytes32 commitment = MessageHashUtils.toTypedDataHash(tender.getDomainSeparator(), structHash);
+        bytes32 bidTypehash = keccak256(
+            "Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)"
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(bidTypehash, amount, salt, metadataHash)
+        );
+        bytes32 commitment = MessageHashUtils.toTypedDataHash(
+            tender.getDomainSeparator(),
+            structHash
+        );
 
         vm.prank(bidder);
-        try tender.submitBid{ value: BID_BOND }(commitment, "", new bytes32[](0)) {
+        try
+            tender.submitBid{value: BID_BOND}(commitment, "", new bytes32[](0))
+        {
             sumDeposits += BID_BOND;
-        } catch { }
+        } catch {}
     }
 
     // ACTION: Reveal Bid

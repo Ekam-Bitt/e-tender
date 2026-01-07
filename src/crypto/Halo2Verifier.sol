@@ -19,10 +19,12 @@ contract Halo2Verifier {
     uint256 public constant NUM_INSTANCES = 3; // [min, max, value]
 
     /// @notice BN254 scalar field modulus (Fr)
-    uint256 internal constant Q_MOD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    uint256 internal constant Q_MOD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     /// @notice BN254 base field modulus (Fq)
-    uint256 internal constant P_MOD = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+    uint256 internal constant P_MOD =
+        21888242871839275222246405745257275088696311157297823662689037894645226208583;
 
     /// @notice Minimum valid proof length (3 G1 points + evaluations)
     uint256 internal constant MIN_PROOF_LENGTH = 192;
@@ -50,7 +52,10 @@ contract Halo2Verifier {
      * @param instances Public inputs [min_bid, max_bid, bid_value]
      * @return True if the proof is valid
      */
-    function verify(bytes calldata proof, uint256[] calldata instances) external pure returns (bool) {
+    function verify(
+        bytes calldata proof,
+        uint256[] calldata instances
+    ) external pure returns (bool) {
         // Validate instance count
         if (instances.length != NUM_INSTANCES) {
             revert InvalidInstanceCount(instances.length, NUM_INSTANCES);
@@ -86,7 +91,10 @@ contract Halo2Verifier {
      * @dev Core proof verification with pairing checks
      * @notice This implements the Halo2 verification equation using BN254 pairings
      */
-    function _verifyProof(bytes calldata proof, uint256[] calldata instances) internal pure returns (bool) {
+    function _verifyProof(
+        bytes calldata proof,
+        uint256[] calldata instances
+    ) internal pure returns (bool) {
         // Step 1: Validate proof structure
         if (!_validateProofStructure(proof)) {
             revert InvalidProofStructure();
@@ -102,20 +110,30 @@ contract Halo2Verifier {
     /**
      * @dev Compute commitment to public instances
      */
-    function _computeInstanceCommitment(uint256[] calldata instances) internal pure returns (uint256 x, uint256 y) {
-        // Hash instances to derive a scalar, then map to curve
+    function _computeInstanceCommitment(
+        uint256[] calldata instances
+    ) internal pure returns (uint256 x, uint256 y) {
+        // Hash instances to derive a scalar. Using abi.encodePacked for array hashing.
         bytes32 h = keccak256(abi.encodePacked(instances));
         x = uint256(h) % P_MOD;
 
         // Compute y² = x³ + 3 and take square root (simplified)
-        uint256 ySquared = addmod(mulmod(x, mulmod(x, x, P_MOD), P_MOD), 3, P_MOD);
+        uint256 ySquared = addmod(
+            mulmod(x, mulmod(x, x, P_MOD), P_MOD),
+            3,
+            P_MOD
+        );
         y = ySquared; // In production, compute modular sqrt
     }
 
     /**
      * @dev Verify the pairing equation from proof components
      */
-    function _verifyPairingEquation(bytes calldata proof, uint256 instX, uint256 instY) internal pure returns (bool) {
+    function _verifyPairingEquation(
+        bytes calldata proof,
+        uint256 instX,
+        uint256 instY
+    ) internal pure returns (bool) {
         // Extract 3 G1 points from proof (each 64 bytes: x, y)
         if (proof.length < 192) {
             return false;
@@ -166,7 +184,9 @@ contract Halo2Verifier {
     /**
      * @dev Validate proof structure
      */
-    function _validateProofStructure(bytes calldata proof) internal pure returns (bool) {
+    function _validateProofStructure(
+        bytes calldata proof
+    ) internal pure returns (bool) {
         if (proof.length < MIN_PROOF_LENGTH) {
             return false;
         }
@@ -181,7 +201,12 @@ contract Halo2Verifier {
     /**
      * @dev Call ecAdd precompile (0x06)
      */
-    function _ecAdd(uint256 ax, uint256 ay, uint256 bx, uint256 by) internal view returns (uint256 rx, uint256 ry) {
+    function _ecAdd(
+        uint256 ax,
+        uint256 ay,
+        uint256 bx,
+        uint256 by
+    ) internal view returns (uint256 rx, uint256 ry) {
         uint256[4] memory input;
         input[0] = ax;
         input[1] = ay;
@@ -205,7 +230,11 @@ contract Halo2Verifier {
     /**
      * @dev Call ecMul precompile (0x07)
      */
-    function _ecMul(uint256 px, uint256 py, uint256 s) internal view returns (uint256 rx, uint256 ry) {
+    function _ecMul(
+        uint256 px,
+        uint256 py,
+        uint256 s
+    ) internal view returns (uint256 rx, uint256 ry) {
         uint256[3] memory input;
         input[0] = px;
         input[1] = py;

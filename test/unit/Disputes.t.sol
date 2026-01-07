@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Test } from "forge-std/Test.sol";
-import { Tender } from "src/core/Tender.sol";
-import { TenderFactory } from "src/core/TenderFactory.sol";
+import {Test} from "forge-std/Test.sol";
+import {Tender} from "src/core/Tender.sol";
+import {TenderFactory} from "src/core/TenderFactory.sol";
 // import {SignatureVerifier} from "src/identity/SignatureVerifier.sol";
-import { LowestPriceStrategy } from "src/strategies/LowestPriceStrategy.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {LowestPriceStrategy} from "src/strategies/LowestPriceStrategy.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {
+    MessageHashUtils
+} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract DisputesTest is Test {
     TenderFactory factory;
@@ -26,17 +30,24 @@ contract DisputesTest is Test {
     function setUp() public {
         vm.startPrank(authority);
         TenderFactory impl = new TenderFactory();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), abi.encodeCall(impl.initialize, ()));
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(impl.initialize, ())
+        );
         factory = TenderFactory(address(proxy));
 
         priceStrategy = new LowestPriceStrategy();
 
         address tenderAddr = factory.createTender(
-            address(0), address(priceStrategy), "QmConfig", biddingTime, revealTime, challengePeriod, bidBond
+            address(0),
+            address(priceStrategy),
+            "QmConfig",
+            biddingTime,
+            revealTime,
+            challengePeriod,
+            bidBond
         );
         tender = Tender(tenderAddr);
-        vm.stopPrank();
-
         vm.stopPrank();
 
         vm.prank(authority);
@@ -50,7 +61,7 @@ contract DisputesTest is Test {
         bytes32 commitment = getCommitment(1 ether, salt, metadataHash);
 
         vm.prank(bidder1);
-        tender.submitBid{ value: bidBond }(commitment, "", new bytes32[](0));
+        tender.submitBid{value: bidBond}(commitment, "", new bytes32[](0));
 
         // Wait to reveal
         vm.warp(block.timestamp + biddingTime + 1);
@@ -62,10 +73,22 @@ contract DisputesTest is Test {
         tender.evaluate();
     }
 
-    function getCommitment(uint256 amount, bytes32 salt, bytes32 metadataHash) internal view returns (bytes32) {
-        bytes32 bidTypehash = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
-        bytes32 structHash = keccak256(abi.encode(bidTypehash, amount, salt, metadataHash));
-        return MessageHashUtils.toTypedDataHash(tender.getDomainSeparator(), structHash);
+    function getCommitment(
+        uint256 amount,
+        bytes32 salt,
+        bytes32 metadataHash
+    ) internal view returns (bytes32) {
+        bytes32 bidTypehash = keccak256(
+            "Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)"
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(bidTypehash, amount, salt, metadataHash)
+        );
+        return
+            MessageHashUtils.toTypedDataHash(
+                tender.getDomainSeparator(),
+                structHash
+            );
     }
 
     function testChallengePeriod_BlockingWithdrawal() public view {
@@ -79,9 +102,9 @@ contract DisputesTest is Test {
         vm.deal(challenger, 5 ether);
 
         vm.prank(challenger);
-        tender.challengeWinner{ value: bidBond }("He is a unrelated bad actor");
+        tender.challengeWinner{value: bidBond}("He is a unrelated bad actor");
 
-        (address actualChallenger,, bool resolved,) = tender.disputes(0);
+        (address actualChallenger, , bool resolved, ) = tender.disputes(0);
         assertEq(actualChallenger, challenger);
         assertFalse(resolved);
 
@@ -89,7 +112,7 @@ contract DisputesTest is Test {
         vm.prank(authority);
         tender.resolveDispute(0, false); // uphold = false
 
-        (,, bool resolved2, bool upheld2) = tender.disputes(0);
+        (, , bool resolved2, bool upheld2) = tender.disputes(0);
         assertTrue(resolved2);
         assertFalse(upheld2);
 
@@ -106,13 +129,13 @@ contract DisputesTest is Test {
         uint256 challengerStart = challenger.balance;
 
         vm.prank(challenger);
-        tender.challengeWinner{ value: bidBond }("Winner is a fraud");
+        tender.challengeWinner{value: bidBond}("Winner is a fraud");
 
         // Resolve as Valid (Uphold)
         vm.prank(authority);
         tender.resolveDispute(0, true); // uphold = true
 
-        (,, bool resolved, bool upheld) = tender.disputes(0);
+        (, , bool resolved, bool upheld) = tender.disputes(0);
         assertTrue(resolved);
         assertTrue(upheld);
 

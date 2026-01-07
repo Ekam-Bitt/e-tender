@@ -18,3 +18,5 @@ runs = 256
 [invariant]
 runs = 128
 
+[lint]
+exclude_lints = ["asm-keccak256"]
