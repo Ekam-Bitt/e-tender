@@ -11,6 +11,14 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use range_proof::{RangeProofCircuit, verifier_sol::{ProvingSystem, generate_solidity_verifier}};
+use range_proof::merkle_circuit::MerkleCircuit;
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{keygen_vk, keygen_pk},
+    poly::commitment::Params,
+};
+use halo2curves::bn256::{Fr, Bn256, G1Affine};
+use rand::rngs::OsRng;
 use std::fs;
 use std::path::PathBuf;
 
@@ -90,6 +98,23 @@ enum Commands {
         /// Value to prove
         #[arg(long)]
         value: u64,
+    },
+
+    /// Generate Solidity Merkle verifier from the Rust circuit
+    GenSolidityMerkle {
+        /// Output file
+        #[arg(short, long, default_value = "Halo2MerkleVerifier.sol")]
+        output: PathBuf,
+    },
+
+    /// Generate Merkle Proof (Mock for now, creates dummy proof)
+    ProveMerkle {
+        /// Leaf value
+        #[arg(long)]
+        leaf: u64,
+        /// Root value
+        #[arg(long)]
+        root: u64,
     },
 }
 
@@ -177,6 +202,37 @@ fn main() -> Result<()> {
             
             // Output as hex for Solidity tests
             println!("0x{}", hex::encode(&proof));
+        }
+
+        Commands::GenSolidityMerkle { output } => {
+            println!("Generating Solidity Merkle verifier...");
+            
+            // 1. Setup Params
+            let k = 8;
+            let circuit = MerkleCircuit::default();
+
+            // Attempt to create Params with explicit type
+            let params: Params<G1Affine> = Params::new(k);
+            let vk = keygen_vk(&params, &circuit).expect("keygen_vk failed");
+            
+            // Fallback: Use Debug representation to get unique bytes for the circuit
+            // This ensures the VK hash changes if the circuit changes.
+            let vk_bytes = format!("{:?}", vk).into_bytes();
+            
+            let solidity_code = generate_solidity_verifier(&vk_bytes);
+            
+            // Rename the contract in the source code to Halo2MerkleVerifier
+            let solidity_code = solidity_code.replace("contract Halo2Verifier", "contract Halo2MerkleVerifier");
+            
+            fs::write(&output, &solidity_code)?;
+            println!("Merkle Verifier written to: {}", output.display());
+        }
+
+        Commands::ProveMerkle { leaf, root } => {
+             // Demo proof generation
+             println!("Generating Merkle Proof for {} in root {}", leaf, root);
+             // TODO: impl real proof
+             println!("0x1234");
         }
     }
     

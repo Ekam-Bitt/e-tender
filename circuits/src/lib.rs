@@ -5,5 +5,6 @@
 
 pub mod range_proof;
 pub mod verifier_sol;
+pub mod merkle_circuit;
 
 pub use range_proof::RangeProofCircuit;

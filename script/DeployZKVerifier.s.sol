@@ -42,9 +42,9 @@ contract DeployZKVerifierScript is Script {
 
         // 3. Deploy the auction strategy using the verifier
         ZKAuctionStrategy zkStrategy = new ZKAuctionStrategy(
-            address(zkRangeVerifier),
-            minBid,
-            maxBid
+            1 ether,
+            100 ether,
+            address(zkRangeVerifier)
         );
         console.log("ZKAuctionStrategy deployed at:", address(zkStrategy));
 

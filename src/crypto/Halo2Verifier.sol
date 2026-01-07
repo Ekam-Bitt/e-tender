@@ -128,12 +128,9 @@ contract Halo2Verifier {
         // Step 4: Compute instance commitment
         (uint256 instX, uint256 instY) = _computeInstanceCommitment(instances);
 
-        // Step 5: Verify instance binding
+        // Step 5: Verify pairing
         // The proof must be cryptographically bound to the public inputs
-        // For development: Accept structurally valid proofs with correct instance binding
-        // For production: Uncomment the full pairing verification below
-
-        return _verifyInstanceBinding(wx, wy, wpx, wpy, instX, instY);
+        return _verifyPairing(wx, wy, wpx, wpy, instX, instY);
     }
 
     /**
@@ -158,33 +155,7 @@ contract Halo2Verifier {
         (x, y) = _ecMul(G1_X, G1_Y, scalar);
     }
 
-    /**
-     * @dev Verify instance binding (development mode)
-     * @notice Validates that proof points and instance commitment are properly formed
-     */
-    function _verifyInstanceBinding(
-        uint256 wx,
-        uint256 wy,
-        uint256 wpx,
-        uint256 wpy,
-        uint256 instX,
-        uint256 instY
-    ) internal pure returns (bool) {
-        // For development: Verify structural validity
-        // Proof is valid if all points are valid (on curve or infinity)
-        // and instance commitment is properly formed
 
-        // If W is zero (point at infinity), check that W' relates to inst
-        if (wx == 0 && wy == 0) {
-            // W = 0, so W + inst = inst
-            // Valid if W' = inst (exact match)
-            return wpx == instX && wpy == instY;
-        }
-
-        // For non-zero W, perform basic structural check
-        // In production, this would be a full pairing verification
-        return true;
-    }
 
     /**
      * @dev Full pairing verification (production mode)

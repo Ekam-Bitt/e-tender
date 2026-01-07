@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IEvaluationStrategy } from "../interfaces/IEvaluationStrategy.sol";
-import { ZKRangeVerifier } from "../crypto/ZKRangeVerifier.sol";
+import {IEvaluationStrategy} from "../interfaces/IEvaluationStrategy.sol";
+import {ZKRangeVerifier} from "src/crypto/ZKRangeVerifier.sol";
 
 /**
  * @title ZKAuctionStrategy
@@ -10,32 +10,32 @@ import { ZKRangeVerifier } from "../crypto/ZKRangeVerifier.sol";
  * @dev Validates the proof during `scoreBid`.
  */
 contract ZKAuctionStrategy is IEvaluationStrategy {
-    ZKRangeVerifier public verifier;
     uint256 public minBid;
     uint256 public maxBid;
+    ZKRangeVerifier public immutable PROOF_VERIFIER;
 
-    constructor(address _verifier, uint256 _min, uint256 _max) {
-        verifier = ZKRangeVerifier(_verifier);
+    constructor(uint256 _min, uint256 _max, address _verifier) {
         minBid = _min;
         maxBid = _max;
+        PROOF_VERIFIER = ZKRangeVerifier(_verifier);
     }
 
-    function scoreBid(uint256 _amount, bytes calldata _metadata) external view override returns (uint256) {
-        // Metadata is expected to contain the ZK Proof
-        // Format: [ProofBytes] (Simplified)
+    function scoreBid(
+        uint256 _amount,
+        bytes calldata _metadata
+    ) external view override returns (uint256) {
+        // Enforce range check (Gas efficient)
+        require(_amount >= minBid, "Bid too low");
+        require(_amount <= maxBid, "Bid too high");
 
-        // In this strategy, the "amount" revealed on-chain might be 0 if fully private?
-        // OR, we are just proving that the revealed amount is valid?
-        // Let's assume this strategy enforces Ranged Bids for a standard auction.
+        // Enforce ZK Proof check (Cryptographic)
+        // Public Inputs: [min, max, value]
+        uint256[] memory publicInputs = new uint256[](3);
+        publicInputs[0] = minBid;
+        publicInputs[1] = maxBid;
+        publicInputs[2] = _amount;
 
-        uint256[] memory inputs = new uint256[](3);
-        inputs[0] = minBid;
-        inputs[1] = maxBid;
-        // In a real ZK scheme, we might pass the commitment here, not the amount?
-        // But IEvaluationStrategy passes `_amount`.
-        inputs[2] = _amount; // Using amount as public input for mock.
-
-        bool valid = verifier.verifyProof(_metadata, inputs);
+        bool valid = PROOF_VERIFIER.verifyProof(_metadata, publicInputs);
         require(valid, "Invalid ZK Proof");
 
         return _amount;
