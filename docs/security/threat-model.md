@@ -1,65 +1,164 @@
 # Threat Model
 
+> **Document Type:** Security Analysis  
+> **Last Updated:** 2026-01-07  
+> **Status:** Production
+
+---
+
+## Executive Summary
+
+This document defines the security boundaries of the e-tendering protocol. It identifies **actors**, **adversaries**, **attack vectors**, and **mitigations** to provide clarity on what the system protects against—and what it explicitly does not.
+
+---
+
 ## 1. System Overview
-This e-tendering system leverages a blockchain (Ethereum-compatible) to provide transparency, immutability, and fairness in the procurement process. It utilizes a **Commit-Reveal** scheme to ensure bid secrecy during the bidding phase and smart contracts to enforce process rules.
+
+The e-tendering system leverages Ethereum to provide:
+
+- **Transparency** — All actions recorded on-chain
+- **Immutability** — State changes are irreversible
+- **Fairness** — Rule enforcement by smart contract, not trusted parties
+
+**Core Mechanism:** Commit-Reveal scheme using EIP-712 typed data hashing.
+
+---
 
 ## 2. Actors and Roles
 
-| Actor | Description | Capabilities |
-|-------|-------------|--------------|
-| **Authority** | The entity issuing the tender (e.g., Govt Dept, Company). | Deploy TenderFactory, Create Tenders, Set Requirements, Finalize Awards (based on SC logic). |
-| **Bidder** | Any entity submitting a proposal. | Deposit Bid Bond, Submit Hashed Bid (Commit), Reveal Bid, Withdraw Bond (if not winner/slashed). |
-| **Auditor** | Independent verifier (optional/external). | Verify on-chain events, Audit smart contract code, Dispute resolution (if Governance layer exists). |
-| **Observer** | Public or non-participating entity. | Read state, Verify proofs, Monitor events. |
+| Actor | Description | Trust Level |
+|-------|-------------|-------------|
+| **Authority** | Entity issuing the tender (government, corporation) | Partial — cannot access bid contents |
+| **Bidder** | Entity submitting a proposal | Untrusted — constrained by bonding |
+| **Auditor** | External verifier (optional) | Trusted for dispute resolution |
+| **Observer** | Non-participating public entity | Read-only access |
 
-## 3. Adversaries and Threat capabilities
+### Capabilities Matrix
+
+| Actor | Deploy | Configure | Submit Bid | Reveal | Evaluate | Dispute |
+|-------|--------|-----------|------------|--------|----------|---------|
+| Authority | ✓ | ✓ | ✗ | ✗ | ✓ | Resolve |
+| Bidder | ✗ | ✗ | ✓ | ✓ | ✗ | Open |
+| Auditor | ✗ | ✗ | ✗ | ✗ | ✗ | Verify |
+| Observer | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+---
+
+## 3. Adversaries
 
 ### 3.1 Malicious Bidder
-- **Goal**: Win unfairly, disrupt the process, or learn others' bids.
-- **Capabilities**:
-  - Can generate multiple addresses (Sybil).
-  - Can submit invalid or spam bids.
-  - Can refuse to reveal the bid after commitment.
-  - Can front-run transactions (if not mitigated).
+
+**Goals:**
+- Win unfairly
+- Learn competitors' bids
+- Disrupt the process (griefing)
+
+**Capabilities:**
+- Generate multiple addresses (Sybil attack)
+- Submit invalid or spam bids
+- Refuse to reveal after commitment
+- Attempt front-running via mempool observation
 
 ### 3.2 Colluding Authority
-- **Goal**: Favor a specific bidder, leak bid information, or censor valid bids.
-- **Capabilities**:
-  - Cannot undetectably alter smart contract logic after deployment.
-  - *Could* try to censor transactions (unlikely if L1 is decentralized, but could ignore off-chain discovery).
-  - *Could* tailor tender requirements (Project Specs) to fit a specific crony (out of scope for SC, but auditable).
+
+**Goals:**
+- Favor a specific bidder
+- Leak bid information
+- Censor valid bids
+
+**Capabilities:**
+- Cannot alter deployed contract logic
+- Cannot decrypt committed bids (hash-based secrecy)
+- Could tailor specifications (out-of-scope, governance issue)
 
 ### 3.3 Network-Level Attacker
-- **Goal**: DoS the system, delay bids until deadline passes.
-- **Capabilities**:
-  - Front-running / MEV bot (Generic).
-  - Network congestion attacks.
 
-## 4. Trust Assumptions
-- **Trust-Minimization**: We do **not** trust the Authority to keep bids secret (handled by Commit-Reveal).
-- **L1 Security**: We assume the underlying blockchain consensus is honest and liveness is maintained.
-- **Client Security**: We assume users protect their private keys.
-- **Rationality**: We assume actors are economically rational (will not burn money for no gain).
+**Goals:**
+- Denial of service
+- Transaction delay attacks
 
-## 5. Assets
-- **Confidentiality**: Bid amounts and details must remain secret until the Reveal phase.
-- **Integrity**: Tender documents and submitted bids cannot be modified.
-- **Availability**: The system must accept bids during the Open phase.
-- **Fairness**: All valid bids submitted on time must be evaluated by the same rules.
+**Capabilities:**
+- MEV/front-running bots
+- Network congestion attacks
+- Mempool observation
 
-## 6. Attack Vectors and Mitigations
+---
 
-| Attack Vector | Description | Risk Level | Mitigation Strategy |
-|---------------|-------------|------------|---------------------|
-| **Bid Secrecy Leak** | Authority or Competitors seeing bids before deadline to undercut. | High | **Commit-Reveal Scheme**: Bids are hashed (`keccak256(amount, salt)`). Only hash is stored on-chain. |
-| **Bid Rigging / Censorship** | Authority modifying bids or deleting them. | High | **Immutability**: Once committed to the blockchain, the hash cannot be changed. Censorship is difficult on public chains. |
-| **Last-Minute Bidding (Sniping)** | Bidders waiting for the last block to submit. | Medium | **Hard Deadlines**: Smart contract enforces block-time/number deadlines. Commit phase ends strictly before Reveal phase. |
-| **Bid Suppression** | Preventing a competitor from bidding via DoS. | Medium | **Public Chain**: High gas fees may occur, but total blocking is hard. **Time Windows**: Sufficiently long bidding periods. |
-| **Sybil Attack** | Flooding the tender with fake bids. | Low/Med | **Bid Bond / Deposit**: Bidders must lock ETH/Tokens to bid. Forfeited if they misbehave (e.g., don't reveal). |
-| **Non-Reveal Griefing** | Winner refuses to reveal or verify, stalling process. | Medium | **Incentives**: If a user commits but does not reveal, they lose their Bid Bond (deposit). |
-| **Front-Running (MEV)** | Observer seeing a tx in mempool and acting on it. | Low | Commit-Reveal makes the content opaque. Ordering matters less in the commit phase if secrecy is held. |
+## 4. Attack Vectors and Mitigations
+
+| # | Attack Vector | Severity | Mitigation |
+|---|---------------|----------|------------|
+| 1 | **Bid Secrecy Leak** | 🔴 Critical | Commit-Reveal: only `keccak256(amount, salt)` stored |
+| 2 | **Bid Rigging / Censorship** | 🔴 Critical | Immutable blockchain; public mempool access |
+| 3 | **Front-Running (MEV)** | 🟡 Medium | Salted hashes make copying useless without salt |
+| 4 | **Last-Minute Sniping** | 🟡 Medium | Hard deadlines enforced by `block.timestamp` |
+| 5 | **Sybil Attack** | 🟡 Medium | Bid bond requirement + Identity verification |
+| 6 | **Non-Reveal Griefing** | 🟡 Medium | Bond forfeiture on failure to reveal |
+| 7 | **DoS via Spam Bids** | 🟢 Low | Bond requirement makes spam economically irrational |
+| 8 | **Invalid Bid Injection** | 🟢 Low | ZK range proofs reject out-of-bounds values |
+
+---
+
+## 5. Security Boundaries
+
+### What the Protocol DOES Protect
+
+| Property | Mechanism |
+|----------|-----------|
+| **Bid Confidentiality** | Commit-Reveal with EIP-712 |
+| **Bid Integrity** | Cryptographic commitment verification |
+| **Process Integrity** | State machine enforces transitions |
+| **Fairness** | Uniform rules applied by smart contract |
+| **Auditability** | Immutable on-chain event logs |
+
+### What the Protocol Does NOT Protect
+
+| Property | Reason |
+|----------|--------|
+| **Off-chain Collusion** | Bidders can collude outside the protocol |
+| **Specification Rigging** | Authority controls tender requirements |
+| **Key Compromise** | User responsibility for key security |
+| **L1 Consensus Failures** | Assumed to be live and secure |
+
+---
+
+## 6. Trust Assumptions
+
+| Assumption | Justification |
+|------------|---------------|
+| **L1 Security** | Underlying blockchain provides consensus and liveness |
+| **Crypto Hardness** | Keccak256 is collision and preimage resistant |
+| **Client Security** | Users protect their private keys |
+| **Economic Rationality** | Actors won't burn money without gain |
+
+---
 
 ## 7. Accepted Risks
-- **Collusion off-chain**: Bidders talking to each other off-chain cannot be prevented by code.
-- **Authority "Spec rigging"**: Authority defining "Requirements: Must be Red Company Inc" is a governance issue, though key-value checks can be automated.
-- **Key Compromise**: Users losing keys lose access/funds.
+
+> [!CAUTION]
+> The following risks are **explicitly accepted** as out-of-scope:
+
+| Risk | Impact | Rationale |
+|------|--------|-----------|
+| **Off-chain Collusion** | Cartel formation | Cannot be prevented by code |
+| **Spec Rigging** | Biased requirements | Governance issue, not protocol issue |
+| **Key Compromise** | Loss of funds/access | User responsibility |
+| **Oracle Manipulation** | N/A | System designed to be oracle-free |
+
+---
+
+## 8. Severity Classification
+
+| Level | Color | Description |
+|-------|-------|-------------|
+| Critical | 🔴 | Direct loss of funds or bid secrecy |
+| Medium | 🟡 | Process disruption or unfair advantage |
+| Low | 🟢 | Minor inconvenience, economically irrational |
+
+---
+
+## Related Documents
+
+- [State Machine](../specs/state-machine.md) — Lifecycle and transitions
+- [Trust Assumptions](../specs/assumptions_trust.md) — Dependency model
+- [ZK Integration](../../ZK_INTEGRATION.md) — Zero-knowledge proof system

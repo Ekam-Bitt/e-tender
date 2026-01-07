@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 env:
-  FOUNDRY_PROFILE: ci
+  FOUNDRY_DISABLE_NIGHTLY_WARNING: true
+
 
 jobs:
   build:
@@ -21,7 +22,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
 
       - name: Check Solidity formatting
         run: forge fmt --check
@@ -48,7 +49,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
 
       - name: Generate coverage report
         run: forge coverage --report lcov --match-path "test/unit/*"
@@ -72,7 +73,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
 
       - name: Generate gas report
         run: forge test --match-path "test/unit/*" --gas-report > gas-report.txt
@@ -82,3 +83,16 @@ jobs:
         with:
           name: gas-report
           path: gas-report.txt
+
+  ci-success:
+    runs-on: ubuntu-latest
+    name: CI Success
+    needs: [build, coverage, gas-report]
+    if: always()
+    steps:
+      - run: |
+          if [[ ${{ contains(needs.*.result, 'failure') }} == 'true' || ${{ contains(needs.*.result, 'cancelled') }} == 'true' ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All jobs passed"

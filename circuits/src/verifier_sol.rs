@@ -53,16 +53,7 @@ impl ProvingSystem {
         }
         
         // Hash instances to get scalar (matching Solidity keccak256(abi.encodePacked(instances)))
-        use halo2curves::bn256::Fr;
-        use halo2curves::ff::Field;
-        
-        // BN254 constants
-        const Q_MOD: [u8; 32] = [
-            0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29,
-            0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
-            0x97, 0x81, 0x6a, 0x91, 0x68, 0x71, 0xca, 0x8d,
-            0x3c, 0x20, 0x8c, 0x16, 0xd8, 0x7c, 0xfd, 0x47
-        ];
+
         
         // Compute G1 * scalar where scalar = keccak256(instances) mod Q
         // For W = 0, W' must equal the instance commitment computed by Solidity
