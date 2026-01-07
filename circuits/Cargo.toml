@@ -14,7 +14,7 @@ name = "range-proof-cli"
 path = "src/main.rs"
 
 [dependencies]
-# Halo2 proving system (use crates.io versions)
+# Halo2 proving system
 halo2_proofs = "0.3"
 halo2curves = "0.6"
 
@@ -37,4 +37,3 @@ criterion = "0.5"
 [profile.release]
 opt-level = 3
 lto = "thin"
-

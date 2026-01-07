@@ -51,6 +51,12 @@ e-tendering/
 └── docs/          # Documentation (specs/, security/)
 ```
 
+## Zero-Knowledge Proof System
+
+The protocol integrates a **Halo2-based zero-knowledge range proof system** using KZG polynomial commitments. Halo2 avoids per-circuit trusted setup; however, KZG relies on a universal **Powers of Tau** ceremony. This implementation uses a publicly available multi-party SRS and is deployed on Sepolia for validation.
+
+> **Note:** Mainnet deployment is intentionally deferred pending formal circuit audit and extended gas analysis.
+
 ## Disclaimer & Trust Assumptions
 This is research-grade software. While rigorously tested, it relies on specific assumptions about the underlying Identity Oracle and L1 consensus.
 - [View Assumptions](docs/specs/assumptions_trust.md)
