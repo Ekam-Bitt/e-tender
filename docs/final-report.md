@@ -18,7 +18,7 @@ This project implements a **decentralized, privacy-preserving e-tendering platfo
 | Lack of auditability | Immutable on-chain event logs |
 | Sybil attacks | Identity verification + bonding |
 
-**Status:** Deployed to Sepolia testnet. Production ZK verifiers operational. Mainnet deployment pending formal audit.
+**Status:** Deployed to Sepolia testnet. **ZK Identity Verification is currently STUBBED for development.** Range verification is implemented but requires final validation with real proofs.
 
 ---
 
@@ -46,14 +46,30 @@ This project implements a **decentralized, privacy-preserving e-tendering platfo
 
 | Component | Status |
 |-----------|--------|
-| **Halo2Verifier.sol** | ✅ Deployed (Sepolia) |
+| **Halo2Verifier.sol** | ✅ Implemented (Range Proofs) |
 | **ZKRangeVerifier.sol** | ✅ Deployed (Sepolia) |
+| **Halo2MerkleVerifier.sol** | ✅ Implemented (Merkle Proofs) |
 | **ZKAuctionStrategy.sol** | ✅ Deployed (Sepolia) |
 
 **Proof System:** Halo2 with KZG polynomial commitments  
-**Verification Gas:** ~20,500 per proof
+**Verification Gas:** ~300k (estimated for valid proof)
 
-### 4. Testing & Verification
+### 4. Cross-Chain Integration (CCIP)
+
+| Component | Status |
+|-----------|--------|
+| **CCIPBidReceiver** | ✅ Deployed (Sepolia) |
+| **CCIPBidSender** | ✅ Deployed (Fuji) |
+| **Tender.submitCrossChainBid()** | ✅ Implemented |
+
+**Live Test:** Cross-chain bid successfully sent from Fuji → Sepolia via Chainlink CCIP.
+
+| Chain | Contract | Address |
+|-------|----------|---------|
+| Sepolia | CCIPBidReceiver | `0x6459...4839` |
+| Fuji | CCIPBidSender | `0x2a02...b7fc` |
+
+### 5. Testing & Verification
 
 | Test Type | Tool | Coverage |
 |-----------|------|----------|
@@ -124,7 +140,7 @@ This project implements a **decentralized, privacy-preserving e-tendering platfo
 | 🔴 High | **Circuit Audit** | Halo2 circuit verification |
 | 🟡 Medium | **Batch Verification** | Aggregate proofs for gas savings |
 | 🟡 Medium | **L2 Deployment** | Reduce costs on Arbitrum/Optimism |
-| 🟢 Low | **Cross-Chain Bridge** | Multi-chain liquidity via LayerZero |
+| ✅ Done | **Cross-Chain Bridge** | CCIP adapter implemented |
 | 🟢 Low | **DAO Governance** | Decentralized dispute resolution |
 
 ---

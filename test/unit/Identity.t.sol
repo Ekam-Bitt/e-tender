@@ -216,14 +216,10 @@ contract IdentityTest is Test {
 
     function testZKMerkleVerification_RejectsFakeProof() public {
         // Attempt to verify a garbage proof
-        bytes memory fakeProof = hex"1234";
         bytes32[] memory signals = new bytes32[](1);
         signals[0] = bytes32(uint256(1)); // Nullifier
 
-        // This should fail because the Proof is invalid (too short)
-        // Halo2Verifier throws ProofTooShort or InvalidProofStructure
-        // It might not even reach Pairing check if length is bad.
-        // Let's make it long enough but invalid.
+        // Long enough but invalid proof
         bytes memory longFakeProof = new bytes(192); // Min length
 
         // It should eventually revert with PairingFailed or PointNotOnCurve

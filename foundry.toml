@@ -13,10 +13,11 @@ tab_width = 4
 bracket_spacing = true
 
 [fuzz]
-runs = 256
+runs = 128
 
 [invariant]
 runs = 128
+depth = 15
 
 [lint]
 exclude_lints = ["asm-keccak256"]

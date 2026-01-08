@@ -49,7 +49,11 @@ contract TenderHandler is Test {
         if (tender.state() != Tender.TenderState.OPEN) return;
         if (bidders.length == 0) return;
 
-        address bidder = bidders[bidderIdx % bidders.length];
+        // Bound inputs
+        bidderIdx = bound(bidderIdx, 0, bidders.length - 1);
+        amount = bound(amount, 10 ether, 1000 ether); // Realistic range
+
+        address bidder = bidders[bidderIdx];
 
         // Generate Commitment
         bytes32 metadataHash = keccak256("meta");
@@ -65,6 +69,11 @@ contract TenderHandler is Test {
         );
 
         vm.prank(bidder);
+        vm.prank(bidder);
+        // NOTE: In invariant tests, we are focusing on protocol flow, not ZK verification.
+        // We use empty proof. The Strategy deployed in Invariants setup MUST be a mock or permissive one.
+        // However, Invariants file deploys LowestPriceStrategy which doesn't check proofs!
+        // So just passing empty bytes is fine.
         try
             tender.submitBid{value: BID_BOND}(commitment, "", new bytes32[](0))
         {

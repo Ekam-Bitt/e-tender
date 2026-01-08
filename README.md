@@ -170,6 +170,25 @@ The protocol uses **Halo2** (KZG polynomial commitments) for zero-knowledge rang
 
 ---
 
+## 🌉 Cross-Chain Integration (CCIP)
+
+The protocol supports **cross-chain bid submission** via Chainlink CCIP:
+
+| Chain | Contract | Address |
+|-------|----------|---------|
+| Sepolia | CCIPBidReceiver | `0x645921f2...4839` |
+| Fuji | CCIPBidSender | `0x2a026858...b7fc` |
+
+**Features:**
+- Submit bids from any CCIP-supported chain
+- Automatic bidder ID computation for cross-chain identity
+- Replay protection via message ID tracking
+- Access-controlled sender authorization
+
+📄 **[Full Cross-Chain Guide →](docs/CROSSCHAIN.md)**
+
+---
+
 ## 🚀 Deployments
 
 ### Sepolia Testnet (Production)

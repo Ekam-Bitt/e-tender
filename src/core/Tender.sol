@@ -109,6 +109,57 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         );
     }
 
+    /// @notice Submit a bid from a cross-chain source
+    /// @dev Only callable by the authorized crossChainReceiver contract
+    /// @param _commitment The bid commitment hash
+    /// @param _bidderId The bidder ID computed from source chain info
+    /// @param _sourceChain The source chain selector
+    function submitCrossChainBid(
+        bytes32 _commitment,
+        bytes32 _bidderId,
+        uint64 _sourceChain
+    ) external payable atState(TenderState.OPEN) whenNotPaused {
+        require(
+            msg.sender == crossChainReceiver,
+            "Tender: only cross-chain receiver"
+        );
+        require(
+            crossChainReceiver != address(0),
+            "Tender: cross-chain not configured"
+        );
+
+        if (block.timestamp >= BIDDING_DEADLINE) {
+            revert InvalidTime(block.timestamp, BIDDING_DEADLINE);
+        }
+        if (msg.value < BID_BOND_AMOUNT) revert IncorrectFee();
+        if (bids[_bidderId].commitment != bytes32(0)) revert BidAlreadyExists();
+
+        bids[_bidderId] = Bid({
+            commitment: _commitment,
+            revealedAmount: 0,
+            deposit: msg.value,
+            timestamp: uint64(block.timestamp),
+            revealed: false,
+            score: 0
+        });
+        bidderIds.push(_bidderId);
+
+        emit CrossChainBidSubmitted(_bidderId, _commitment, _sourceChain);
+
+        _logCompliance(
+            REG_BID_SUBMITTED,
+            msg.sender,
+            _bidderId,
+            abi.encode(_commitment, _sourceChain)
+        );
+    }
+
+    /// @notice Set the cross-chain receiver contract
+    /// @dev Only callable by authority
+    function setCrossChainReceiver(address _receiver) external onlyAuthority {
+        crossChainReceiver = _receiver;
+    }
+
     error IncorrectFee();
     error BidAlreadyExists();
     error BidNotRevealed();
@@ -174,6 +225,9 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     mapping(bytes32 => Bid) public bids;
     bytes32[] public bidderIds;
 
+    // Cross-chain
+    address public crossChainReceiver;
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -183,6 +237,11 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         bytes32 identityType
     );
     event BidSubmitted(bytes32 indexed bidderId, bytes32 commitment);
+    event CrossChainBidSubmitted(
+        bytes32 indexed bidderId,
+        bytes32 commitment,
+        uint64 sourceChain
+    );
     event BidRevealed(
         bytes32 indexed bidderId,
         uint256 amount,
