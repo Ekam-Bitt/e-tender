@@ -79,8 +79,10 @@ cargo build --release
 ### 6. Generate Solidity Verifier (Advanced)
 
 ```bash
-./target/release/range-proof-cli gen-solidity --output Halo2Verifier.sol
+./target/release/range-proof-cli gen-solidity --output Halo2Verifier.sol --k 8
 ```
+
+> **Note**: Use `--help` to see all available CLI subcommands and options.
 
 ## Circuit Design
 

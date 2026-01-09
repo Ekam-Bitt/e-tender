@@ -23,7 +23,9 @@ contract TenderInvariants is Test {
         // Deploy a Tender
         // We use LowestPrice for simplicity in invariants
         // Bidding time = 100 days (to allow fuzzing breadth)
-        address tenderAddr = factory.createTender(address(0), address(0), "QmConfig", 100 days, 1 days, 1 days, 1 ether);
+        address tenderAddr = factory.createTender(
+            Tender.IdentityMode.NONE, address(0), address(0), "QmConfig", 100 days, 1 days, 1 days, 1 ether
+        );
         tender = Tender(tenderAddr);
         vm.stopPrank();
 

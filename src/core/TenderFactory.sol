@@ -19,6 +19,7 @@ contract TenderFactory is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     }
 
     function createTender(
+        Tender.IdentityMode _identityMode,
         address _verifier,
         address _evaluationStrategy,
         string calldata _configIpfsHash,
@@ -30,6 +31,7 @@ contract TenderFactory is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         // Tender is NOT upgradeable. The Factory is.
         // We deploy immutable tenders.
         Tender tender = new Tender(
+            _identityMode,
             msg.sender,
             _verifier,
             _evaluationStrategy,

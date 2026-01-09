@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {IIdentityVerifier} from "src/interfaces/IIdentityVerifier.sol";
-import {IEvaluationStrategy} from "src/interfaces/IEvaluationStrategy.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ComplianceModule} from "src/compliance/ComplianceModule.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IIdentityVerifier } from "src/interfaces/IIdentityVerifier.sol";
+import { IEvaluationStrategy } from "src/interfaces/IEvaluationStrategy.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
+import { ComplianceModule } from "src/compliance/ComplianceModule.sol";
 
 /**
  * @title Tender
@@ -25,7 +25,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     // ... (omitting unchanged parts)
 
     constructor(
-        // ... args
+        IdentityMode _identityMode,
         address _authority,
         address _verifier,
         address _evaluationStrategy,
@@ -35,6 +35,14 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         uint256 _challengePeriod,
         uint256 _bidBondAmount
     ) EIP712("Tender", "1") {
+        // Validate identity mode / verifier consistency
+        if (_identityMode == IdentityMode.NONE) {
+            require(_verifier == address(0), "Tender: NONE mode requires zero verifier");
+        } else {
+            require(_verifier != address(0), "Tender: Verifier required for non-NONE mode");
+        }
+
+        IDENTITY_MODE = _identityMode;
         AUTHORITY = _authority;
         verifier = IIdentityVerifier(_verifier);
         evaluationStrategy = IEvaluationStrategy(_evaluationStrategy);
@@ -47,21 +55,17 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
         state = TenderState.CREATED;
 
-        _logCompliance(
-            REG_TENDER_CREATED,
-            msg.sender,
-            bytes32(uint256(uint160(address(this)))),
-            bytes(_configIpfsHash)
-        );
+        _logCompliance(REG_TENDER_CREATED, msg.sender, bytes32(uint256(uint160(address(this)))), bytes(_configIpfsHash));
     }
 
     // ...
 
-    function submitBid(
-        bytes32 _commitment,
-        bytes calldata _identityProof,
-        bytes32[] calldata _publicSignals
-    ) external payable atState(TenderState.OPEN) whenNotPaused {
+    function submitBid(bytes32 _commitment, bytes calldata _identityProof, bytes32[] calldata _publicSignals)
+        external
+        payable
+        atState(TenderState.OPEN)
+        whenNotPaused
+    {
         bytes32 bidderId;
 
         // Identity Check
@@ -69,16 +73,32 @@ contract Tender is EIP712, Pausable, ComplianceModule {
             bool authorized = verifier.verify(_identityProof, _publicSignals);
             if (!authorized) revert Unauthorized();
 
-            // Decoupling: Use wrapped signal as ID.
-            if (_publicSignals.length > 0) {
-                // For SignatureVerifier, signal[0] is the address. Wrapping it matches _getBidderId(addr).
-                bidderId = _bidderIdFromSignal(_publicSignals[0]);
+            bytes32 typeId = verifier.identityType();
+
+            if (typeId == keccak256("NULLIFIER_V1")) {
+                // Signals: [commitment, nullifier, external_nullifier]
+                if (_publicSignals[0] != _commitment) revert Unauthorized();
+                if (_publicSignals[2] != bytes32(uint256(uint160(address(this))))) revert Unauthorized();
+                bidderId = _publicSignals[1];
+                // forge-lint: disable-next-line(unsafe-typecast)
+            } else if (typeId == bytes32("ISSUER_SIGNATURE")) {
+                if (_publicSignals.length > 0) {
+                    bidderId = _bidderIdFromSignal(_publicSignals[0]);
+                } else {
+                    bidderId = _getBidderId(msg.sender);
+                }
             } else {
-                // Fallback should not happen with valid verifiers, but if it does:
-                bidderId = _getBidderId(msg.sender);
+                // Fallback
+                if (_publicSignals.length > 0) {
+                    bidderId = _bidderIdFromSignal(_publicSignals[0]);
+                } else {
+                    bidderId = _getBidderId(msg.sender);
+                }
             }
         } else {
-            // Public Tender
+            // Public Tender (Fallback if no verifier, though this weakens spam resistance)
+            // Ideally we always enforce Nullifiers in this new design.
+            // But preserving "Public" mode for now as legacy support.
             emit IdentityVerificationBypassed();
             bidderId = _getBidderId(msg.sender);
         }
@@ -87,6 +107,8 @@ contract Tender is EIP712, Pausable, ComplianceModule {
             revert InvalidTime(block.timestamp, BIDDING_DEADLINE);
         }
         if (msg.value < BID_BOND_AMOUNT) revert IncorrectFee();
+
+        // Spam Resistance: Check Nullifier Uniqueness
         if (bids[bidderId].commitment != bytes32(0)) revert BidAlreadyExists();
 
         bids[bidderId] = Bid({
@@ -103,7 +125,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
         _logCompliance(
             REG_BID_SUBMITTED,
-            msg.sender,
+            msg.sender, // Sender still logged for compliance (spam tracking), but logic uses Nullifier
             bidderId,
             abi.encode(_commitment)
         );
@@ -114,19 +136,14 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     /// @param _commitment The bid commitment hash
     /// @param _bidderId The bidder ID computed from source chain info
     /// @param _sourceChain The source chain selector
-    function submitCrossChainBid(
-        bytes32 _commitment,
-        bytes32 _bidderId,
-        uint64 _sourceChain
-    ) external payable atState(TenderState.OPEN) whenNotPaused {
-        require(
-            msg.sender == crossChainReceiver,
-            "Tender: only cross-chain receiver"
-        );
-        require(
-            crossChainReceiver != address(0),
-            "Tender: cross-chain not configured"
-        );
+    function submitCrossChainBid(bytes32 _commitment, bytes32 _bidderId, uint64 _sourceChain)
+        external
+        payable
+        atState(TenderState.OPEN)
+        whenNotPaused
+    {
+        require(msg.sender == crossChainReceiver, "Tender: only cross-chain receiver");
+        require(crossChainReceiver != address(0), "Tender: cross-chain not configured");
 
         if (block.timestamp >= BIDDING_DEADLINE) {
             revert InvalidTime(block.timestamp, BIDDING_DEADLINE);
@@ -146,12 +163,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
         emit CrossChainBidSubmitted(_bidderId, _commitment, _sourceChain);
 
-        _logCompliance(
-            REG_BID_SUBMITTED,
-            msg.sender,
-            _bidderId,
-            abi.encode(_commitment, _sourceChain)
-        );
+        _logCompliance(REG_BID_SUBMITTED, msg.sender, _bidderId, abi.encode(_commitment, _sourceChain));
     }
 
     /// @notice Set the cross-chain receiver contract
@@ -181,6 +193,13 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         CANCELED
     }
 
+    /// @notice Identity verification mode for this tender
+    enum IdentityMode {
+        NONE, // Public / legacy - no verification required
+        SIGNATURE, // Permissioned via issuer signature
+        ZK_NULLIFIER // Anonymous + spam-resistant via ZK proofs
+    }
+
     struct Bid {
         bytes32 commitment; // EIP-712 Hash
         uint256 revealedAmount;
@@ -190,14 +209,14 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         uint256 score;
     }
 
-    bytes32 private constant BID_TYPEHASH =
-        keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
+    // bytes32 private constant BID_TYPEHASH = ... REMOVED
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
     address public immutable AUTHORITY;
+    IdentityMode public immutable IDENTITY_MODE;
     IIdentityVerifier public verifier; // Identity Layer
     IEvaluationStrategy public evaluationStrategy; // Evaluation Layer
     string public configIpfsHash;
@@ -231,33 +250,17 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-    event TenderOpened(
-        uint256 biddingDeadline,
-        uint256 revealDeadline,
-        bytes32 identityType
-    );
+    event TenderOpened(uint256 biddingDeadline, uint256 revealDeadline, bytes32 identityType);
     event BidSubmitted(bytes32 indexed bidderId, bytes32 commitment);
-    event CrossChainBidSubmitted(
-        bytes32 indexed bidderId,
-        bytes32 commitment,
-        uint64 sourceChain
-    );
-    event BidRevealed(
-        bytes32 indexed bidderId,
-        uint256 amount,
-        bytes32 metadataHash
-    );
+    event CrossChainBidSubmitted(bytes32 indexed bidderId, bytes32 commitment, uint64 sourceChain);
+    event BidRevealed(bytes32 indexed bidderId, uint256 amount, bytes32 metadataHash);
     event TenderAwarded(bytes32 indexed winnerId, uint256 amount);
     event TenderCanceled(string reason);
     event BondsSlashed(uint256 totalAmount);
-    event IdentityVerificationBypassed(); // Legacy/Dev mode warning
+    event IdentityVerificationBypassed();
 
     // Dispute Events
-    event DisputeOpened(
-        uint256 indexed disputeId,
-        address indexed challenger,
-        string reason
-    );
+    event DisputeOpened(uint256 indexed disputeId, address indexed challenger, string reason);
     event DisputeResolved(uint256 indexed disputeId, bool upheld);
     event TenderResolved();
 
@@ -301,11 +304,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
                             TENDER FLOW
     //////////////////////////////////////////////////////////////*/
 
-    function openTendering()
-        external
-        onlyAuthority
-        atState(TenderState.CREATED)
-    {
+    function openTendering() external onlyAuthority atState(TenderState.CREATED) {
         state = TenderState.OPEN;
 
         // Emit Identity Info for Indexers
@@ -325,9 +324,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
 
     /// @dev Internal helper for wrapping verified signals
     /// @notice Unifies ID generation for Verified (Simulated) and Public modes
-    function _bidderIdFromSignal(
-        bytes32 _signal
-    ) internal pure returns (bytes32) {
+    function _bidderIdFromSignal(bytes32 _signal) internal pure returns (bytes32) {
         // keccak256(abi.encodePacked) is used for readability and standard EIP-712 compliance.
         return keccak256(abi.encodePacked("ADDR_BIDDER", _signal));
     }
@@ -337,11 +334,7 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     /// @param _amount The bid amount (e.g. price)
     /// @param _salt The random salt used in commitment
     /// @param _metadata The full metadata bytes (preimage of metadataHash).
-    function revealBid(
-        uint256 _amount,
-        bytes32 _salt,
-        bytes calldata _metadata
-    ) external whenNotPaused {
+    function revealBid(uint256 _amount, bytes32 _salt, bytes calldata _metadata) external whenNotPaused {
         if (state == TenderState.OPEN && block.timestamp >= BIDDING_DEADLINE) {
             state = TenderState.REVEAL_PERIOD;
         }
@@ -369,42 +362,22 @@ contract Tender is EIP712, Pausable, ComplianceModule {
         Bid storage bid = bids[bidderId];
         if (bid.revealed) revert AlreadyRevealed();
 
-        // 1. Compute metadataHash from the revealed metadata
-        // Using high-level keccak256 for readability and maintenance.
-        bytes32 metadataHash = keccak256(_metadata);
-
-        // 2. Re-create the structHash that was signed/committed
-        // Using abi.encode for EIP-712 structural integrity.
-        bytes32 structHash = keccak256(
-            abi.encode(BID_TYPEHASH, _amount, _salt, metadataHash)
-        );
-        bytes32 computedHash = _hashTypedDataV4(structHash);
-
-        if (computedHash != bid.commitment) {
-            revert InvalidCommitment();
-        }
-
-        // 3. Scoring
-        bid.score = evaluationStrategy.scoreBid(_amount, _metadata);
+        // DELEGATE Verification and Scoring to the Strategy
+        // This allows strategies to implement custom commitment schemes (e.g. Poseidon for ZK)
+        // or standard EIP-712.
+        bid.score = evaluationStrategy.verifyAndScoreBid(bid.commitment, _amount, _salt, _metadata, msg.sender);
 
         bid.revealed = true;
         bid.revealedAmount = _amount;
 
+        bytes32 metadataHash = keccak256(_metadata);
         emit BidRevealed(bidderId, _amount, metadataHash);
 
-        _logCompliance(
-            REG_BID_REVEALED,
-            msg.sender,
-            bidderId,
-            abi.encode(_amount)
-        );
+        _logCompliance(REG_BID_REVEALED, msg.sender, bidderId, abi.encode(_amount));
     }
 
     function evaluate() external onlyAuthority {
-        if (
-            state == TenderState.REVEAL_PERIOD &&
-            block.timestamp >= REVEAL_DEADLINE
-        ) {
+        if (state == TenderState.REVEAL_PERIOD && block.timestamp >= REVEAL_DEADLINE) {
             state = TenderState.EVALUATION;
         }
         if (state != TenderState.EVALUATION) {
@@ -452,37 +425,20 @@ contract Tender is EIP712, Pausable, ComplianceModule {
     }
 
     /// @notice Challenge the award. Requires posting a bond (same as bid bond).
-    function challengeWinner(
-        string calldata reason
-    ) external payable atState(TenderState.AWARDED) {
+    function challengeWinner(string calldata reason) external payable atState(TenderState.AWARDED) {
         if (block.timestamp >= challengeDeadline) {
             revert InvalidTime(block.timestamp, challengeDeadline);
         }
         if (msg.value < BID_BOND_AMOUNT) revert IncorrectFee();
 
-        disputes.push(
-            Dispute({
-                challenger: msg.sender,
-                reason: reason,
-                resolved: false,
-                upheld: false
-            })
-        );
+        disputes.push(Dispute({ challenger: msg.sender, reason: reason, resolved: false, upheld: false }));
 
         emit DisputeOpened(disputes.length - 1, msg.sender, reason);
 
-        _logCompliance(
-            REG_DISPUTE_OPENED,
-            msg.sender,
-            bytes32(disputes.length - 1),
-            bytes(reason)
-        );
+        _logCompliance(REG_DISPUTE_OPENED, msg.sender, bytes32(disputes.length - 1), bytes(reason));
     }
 
-    function resolveDispute(
-        uint256 disputeId,
-        bool uphold
-    ) external onlyAuthority {
+    function resolveDispute(uint256 disputeId, bool uphold) external onlyAuthority {
         if (disputeId >= disputes.length) revert("Invalid dispute ID");
         Dispute storage d = disputes[disputeId];
         if (d.resolved) revert("Already resolved");

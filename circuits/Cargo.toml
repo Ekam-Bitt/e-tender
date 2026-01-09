@@ -14,15 +14,13 @@ name = "range-proof-cli"
 path = "src/main.rs"
 
 [dependencies]
-# Halo2 proving system
-halo2_proofs = "0.3"
-halo2curves = "0.6"
-halo2_gadgets = "0.3" 
-# Note: In a real environment we would depend on a poseidon crate. 
-# For this "agentic" environment where I cannot easily pull large crates or git deps without risk,
-# I will use a simple "Hashes" gadget if available or implement a basic Merkle structure using available primitives.
-# To ensure success, I will use halo2_gadgets which often includes Poseidon or Sinsemilla.
+# Axiom's halo2-lib stack (production-grade, powers Axiom, Scroll, etc.)
+# Using halo2-axiom backend (default, faster proving)
+halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.5.0-git", default-features = false, features = ["halo2-axiom"] }
 
+# Verifier generation
+snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier", branch = "main", default-features = false, features = ["halo2-axiom"] }
+snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier", branch = "main", default-features = false, features = ["halo2-axiom", "loader_evm", "loader_halo2"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -33,9 +31,12 @@ bincode = "1.3"
 clap = { version = "4.4", features = ["derive"] }
 anyhow = "1.0"
 hex = "0.4"
+tiny-keccak = { version = "2.0", features = ["keccak"] }
 
 # Random number generation
 rand = "0.8"
+
+
 
 [dev-dependencies]
 criterion = "0.5"

@@ -7,12 +7,21 @@ pragma solidity ^0.8.20;
  */
 interface IEvaluationStrategy {
     /**
-     * @notice Calculates the score for a bid based on its amount and revealed metadata.
-     * @param amount The bid amount (e.g. price in Wei).
-     * @param metadata The revealed metadata bytes (e.g. ABI encoded params).
-     * @return score The calculated score.
+     * @notice Verifies the commitment and calculates a score for the bid.
+     * @param commitment The commitment submitted by the bidder.
+     * @param amount The bid amount (or 0 if hidden/ZK).
+     * @param salt The salt used in commitment (or 0).
+     * @param metadata Bid metadata (or ZK proof).
+     * @param bidder The address of the bidder.
+     * @return score The calculated score for the bid.
      */
-    function scoreBid(uint256 amount, bytes calldata metadata) external view returns (uint256 score);
+    function verifyAndScoreBid(
+        bytes32 commitment,
+        uint256 amount,
+        bytes32 salt,
+        bytes calldata metadata,
+        address bidder
+    ) external view returns (uint256 score);
 
     /**
      * @notice Defines the sorting direction for scores.

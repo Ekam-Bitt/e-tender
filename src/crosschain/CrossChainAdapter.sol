@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ICrossChainAdapter} from "../interfaces/ICrossChainAdapter.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import { ICrossChainAdapter } from "../interfaces/ICrossChainAdapter.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 // ============ CCIP Types (matching Chainlink naming) ============
 
@@ -32,24 +32,14 @@ struct Any2EvmMessage {
 
 /// @notice Minimal CCIP Router interface
 interface IRouterClient {
-    function ccipSend(
-        uint64 destinationChainSelector,
-        Evm2AnyMessage memory message
-    ) external payable returns (bytes32);
+    function ccipSend(uint64 destinationChainSelector, Evm2AnyMessage memory message) external payable returns (bytes32);
 
-    function getFee(
-        uint64 destinationChainSelector,
-        Evm2AnyMessage memory message
-    ) external view returns (uint256);
+    function getFee(uint64 destinationChainSelector, Evm2AnyMessage memory message) external view returns (uint256);
 }
 
 /// @notice Interface for Tender cross-chain bid submission
 interface ITender {
-    function submitCrossChainBid(
-        bytes32 commitment,
-        bytes32 bidderId,
-        uint64 sourceChain
-    ) external payable;
+    function submitCrossChainBid(bytes32 commitment, bytes32 bidderId, uint64 sourceChain) external payable;
 }
 
 /**
@@ -87,11 +77,7 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
     event TenderSet(address indexed tender);
     event BondAmountSet(uint256 amount);
     event SourceChainAllowed(uint64 indexed chainSelector, bool allowed);
-    event SenderAllowed(
-        uint64 indexed chainSelector,
-        address indexed sender,
-        bool allowed
-    );
+    event SenderAllowed(uint64 indexed chainSelector, address indexed sender, bool allowed);
 
     // ============ Errors ============
 
@@ -118,19 +104,12 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
         emit BondAmountSet(_amount);
     }
 
-    function allowSourceChain(
-        uint64 chainSelector,
-        bool allowed
-    ) external onlyOwner {
+    function allowSourceChain(uint64 chainSelector, bool allowed) external onlyOwner {
         allowedSourceChains[chainSelector] = allowed;
         emit SourceChainAllowed(chainSelector, allowed);
     }
 
-    function allowSender(
-        uint64 chainSelector,
-        address sender,
-        bool allowed
-    ) external onlyOwner {
+    function allowSender(uint64 chainSelector, address sender, bool allowed) external onlyOwner {
         allowedSenders[chainSelector][sender] = allowed;
         emit SenderAllowed(chainSelector, sender, allowed);
     }
@@ -138,11 +117,12 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
     // ============ ICrossChainAdapter Implementation ============
 
     /// @inheritdoc ICrossChainAdapter
-    function estimateFee(
-        uint64 destChainSelector,
-        address destTender,
-        bytes32 commitment
-    ) external view override returns (uint256) {
+    function estimateFee(uint64 destChainSelector, address destTender, bytes32 commitment)
+        external
+        view
+        override
+        returns (uint256)
+    {
         bytes memory payload = abi.encode(commitment, msg.sender);
 
         Evm2AnyMessage memory message = Evm2AnyMessage({
@@ -157,11 +137,12 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
     }
 
     /// @inheritdoc ICrossChainAdapter
-    function sendBid(
-        uint64 destChainSelector,
-        address destTender,
-        bytes32 commitment
-    ) external payable override returns (bytes32 messageId) {
+    function sendBid(uint64 destChainSelector, address destTender, bytes32 commitment)
+        external
+        payable
+        override
+        returns (bytes32 messageId)
+    {
         bytes memory payload = abi.encode(commitment, msg.sender);
 
         Evm2AnyMessage memory message = Evm2AnyMessage({
@@ -177,14 +158,9 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
             revert InsufficientFee(fee, msg.value);
         }
 
-        messageId = ROUTER.ccipSend{value: fee}(destChainSelector, message);
+        messageId = ROUTER.ccipSend{ value: fee }(destChainSelector, message);
 
-        emit CrossChainBidSent(
-            destChainSelector,
-            destTender,
-            commitment,
-            messageId
-        );
+        emit CrossChainBidSent(destChainSelector, destTender, commitment, messageId);
 
         // Refund excess
         if (msg.value > fee) {
@@ -193,11 +169,10 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
     }
 
     /// @inheritdoc ICrossChainAdapter
-    function receiveMessage(
-        uint64 sourceChainSelector,
-        address sourceSender,
-        bytes calldata payload
-    ) external override {
+    function receiveMessage(uint64 sourceChainSelector, address sourceSender, bytes calldata payload)
+        external
+        override
+    {
         if (!allowedSourceChains[sourceChainSelector]) {
             revert InvalidSourceChain(sourceChainSelector);
         }
@@ -238,46 +213,25 @@ contract CCIPBidReceiver is ICrossChainAdapter, Ownable {
 
     // ============ Internal Functions ============
 
-    function _processPayload(
-        uint64 sourceChainSelector,
-        address,
-        bytes calldata payload
-    ) internal {
+    function _processPayload(uint64 sourceChainSelector, address, bytes calldata payload) internal {
         if (tender == address(0)) revert TenderNotSet();
 
         // Decode payload: (commitment, originalSender)
-        (bytes32 commitment, address originalSender) = abi.decode(
-            payload,
-            (bytes32, address)
-        );
+        (bytes32 commitment, address originalSender) = abi.decode(payload, (bytes32, address));
 
         // Compute bidderId from source chain info
-        bytes32 bidderId = keccak256(
-            abi.encodePacked(
-                "CROSSCHAIN_BIDDER",
-                sourceChainSelector,
-                originalSender
-            )
-        );
+        bytes32 bidderId = keccak256(abi.encodePacked("CROSSCHAIN_BIDDER", sourceChainSelector, originalSender));
 
-        emit CrossChainBidReceived(
-            sourceChainSelector,
-            originalSender,
-            commitment,
-            bidderId
-        );
+        emit CrossChainBidReceived(sourceChainSelector, originalSender, commitment, bidderId);
 
         // Forward to Tender with bond
-        if (address(this).balance < bidBondAmount)
+        if (address(this).balance < bidBondAmount) {
             revert InsufficientBondBalance();
-        ITender(tender).submitCrossChainBid{value: bidBondAmount}(
-            commitment,
-            bidderId,
-            sourceChainSelector
-        );
+        }
+        ITender(tender).submitCrossChainBid{ value: bidBondAmount }(commitment, bidderId, sourceChainSelector);
     }
 
     // ============ Receive ============
 
-    receive() external payable {}
+    receive() external payable { }
 }

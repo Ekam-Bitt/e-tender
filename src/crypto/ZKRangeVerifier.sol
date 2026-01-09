@@ -6,8 +6,7 @@ import { Halo2Verifier } from "src/crypto/Halo2Verifier.sol";
 /**
  * @title ZKRangeVerifier
  * @notice Adapter contract that wraps Halo2Verifier for use with ZKAuctionStrategy
- * @dev This contract maintains backward compatibility with the original mock interface
- *      while delegating to the real cryptographic verifier.
+ * @dev This contract adapts the standard verifier interface to the strategy interface.
  *
  * Architecture:
  *   ZKAuctionStrategy --> ZKRangeVerifier (adapter) --> Halo2Verifier (crypto)
@@ -64,6 +63,9 @@ contract ZKRangeVerifier {
 
         // Delegate to the underlying Halo2 verifier
         valid = VERIFIER.verify(proof, publicInputs);
+
+        // Revert if verification failed
+        require(valid, "ZKRangeVerifier: proof verification failed");
 
         // Note: In a production setting, you might emit an event
         // for off-chain monitoring. Omitted here to save gas.

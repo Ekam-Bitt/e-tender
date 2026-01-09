@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Script, console} from "forge-std/Script.sol";
-import {CCIPBidReceiver} from "src/crosschain/CrossChainAdapter.sol";
-import {TenderFactory} from "src/core/TenderFactory.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { Script, console } from "forge-std/Script.sol";
+import { CCIPBidReceiver } from "src/crosschain/CrossChainAdapter.sol";
 
 /**
  * @title DeployCCIP
@@ -65,9 +61,7 @@ contract DeployCCIPReceiver is Script {
         console.log("CCIPBidReceiver:", address(receiver));
         console.log("\nNext Steps:");
         console.log("1. Deploy sender on Fuji");
-        console.log(
-            "2. Call receiver.allowSender(FUJI_SELECTOR, senderAddress, true)"
-        );
+        console.log("2. Call receiver.allowSender(FUJI_SELECTOR, senderAddress, true)");
         console.log("3. Call receiver.setTender(tenderAddress)");
         console.log("4. Fund receiver with ETH for bid bonds");
     }
@@ -93,12 +87,8 @@ contract DeployCCIPSender is Script {
         console.log("\n=== Fuji Deployment Complete ===");
         console.log("CCIPBidSender:", address(sender));
         console.log("\nNext Steps:");
-        console.log(
-            "1. On Sepolia receiver, call: allowSender(FUJI_SELECTOR, senderAddress, true)"
-        );
-        console.log(
-            "2. Users can now call sender.sendBid() to submit cross-chain bids"
-        );
+        console.log("1. On Sepolia receiver, call: allowSender(FUJI_SELECTOR, senderAddress, true)");
+        console.log("2. Users can now call sender.sendBid() to submit cross-chain bids");
     }
 }
 

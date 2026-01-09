@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 import {
     CCIPBidReceiver,
     IRouterClient,
@@ -16,21 +16,13 @@ contract MockCCIPRouter is IRouterClient {
     bytes32 public lastMessageId;
     uint256 public messageCount;
 
-    function ccipSend(
-        uint64,
-        Evm2AnyMessage memory
-    ) external payable override returns (bytes32) {
+    function ccipSend(uint64, Evm2AnyMessage memory) external payable override returns (bytes32) {
         messageCount++;
-        lastMessageId = keccak256(
-            abi.encodePacked(block.timestamp, messageCount)
-        );
+        lastMessageId = keccak256(abi.encodePacked(block.timestamp, messageCount));
         return lastMessageId;
     }
 
-    function getFee(
-        uint64,
-        Evm2AnyMessage memory
-    ) external pure override returns (uint256) {
+    function getFee(uint64, Evm2AnyMessage memory) external pure override returns (uint256) {
         return MOCK_FEE;
     }
 }
@@ -42,11 +34,7 @@ contract MockTender {
     uint64 public lastSourceChain;
     uint256 public bidCount;
 
-    function submitCrossChainBid(
-        bytes32 commitment,
-        bytes32 bidderId,
-        uint64 sourceChain
-    ) external payable {
+    function submitCrossChainBid(bytes32 commitment, bytes32 bidderId, uint64 sourceChain) external payable {
         lastCommitment = commitment;
         lastBidderId = bidderId;
         lastSourceChain = sourceChain;
@@ -100,11 +88,7 @@ contract CrossChainAdapterTest is Test {
 
     function test_EstimateFee() public view {
         bytes32 commitment = keccak256("test commitment");
-        uint256 fee = receiver.estimateFee(
-            FUJI_SELECTOR,
-            address(mockTender),
-            commitment
-        );
+        uint256 fee = receiver.estimateFee(FUJI_SELECTOR, address(mockTender), commitment);
         assertEq(fee, mockRouter.MOCK_FEE());
     }
 
@@ -114,11 +98,7 @@ contract CrossChainAdapterTest is Test {
         vm.deal(bidder, 1 ether);
 
         vm.prank(bidder);
-        bytes32 messageId = receiver.sendBid{value: 0.1 ether}(
-            FUJI_SELECTOR,
-            address(mockTender),
-            commitment
-        );
+        bytes32 messageId = receiver.sendBid{ value: 0.1 ether }(FUJI_SELECTOR, address(mockTender), commitment);
 
         assertEq(messageId, mockRouter.lastMessageId());
         assertEq(mockRouter.messageCount(), 1);
@@ -132,11 +112,7 @@ contract CrossChainAdapterTest is Test {
         uint256 balanceBefore = bidder.balance;
 
         vm.prank(bidder);
-        receiver.sendBid{value: 0.5 ether}(
-            FUJI_SELECTOR,
-            address(mockTender),
-            commitment
-        );
+        receiver.sendBid{ value: 0.5 ether }(FUJI_SELECTOR, address(mockTender), commitment);
 
         assertEq(bidder.balance, balanceBefore - mockRouter.MOCK_FEE());
     }
@@ -148,11 +124,7 @@ contract CrossChainAdapterTest is Test {
 
         vm.prank(bidder);
         vm.expectRevert();
-        receiver.sendBid{value: 0.001 ether}(
-            FUJI_SELECTOR,
-            address(mockTender),
-            commitment
-        );
+        receiver.sendBid{ value: 0.001 ether }(FUJI_SELECTOR, address(mockTender), commitment);
     }
 
     function test_ReceiveMessage_Success() public {
@@ -232,9 +204,7 @@ contract CrossChainAdapterTest is Test {
         assertEq(mockTender.lastSourceChain(), FUJI_SELECTOR);
 
         // Verify bidderId computation
-        bytes32 expectedBidderId = keccak256(
-            abi.encodePacked("CROSSCHAIN_BIDDER", FUJI_SELECTOR, originalBidder)
-        );
+        bytes32 expectedBidderId = keccak256(abi.encodePacked("CROSSCHAIN_BIDDER", FUJI_SELECTOR, originalBidder));
         assertEq(mockTender.lastBidderId(), expectedBidderId);
     }
 }

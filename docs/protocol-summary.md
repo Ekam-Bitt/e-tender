@@ -113,7 +113,7 @@ The protocol uses **pluggable interfaces** for maximum flexibility:
 
 | Interface | Purpose | Implementations |
 |-----------|---------|-----------------|
-| `IIdentityVerifier` | Entity authorization | `AddressVerifier`, `ZKIdentityVerifier` |
+| `IIdentityVerifier` | Entity authorization | `SignatureVerifier`, `ZKNullifierVerifier` |
 | `IEvaluationStrategy` | Bid scoring | `LowestPriceStrategy`, `ZKAuctionStrategy` |
 | `ICrossChainAdapter` | Multi-chain support | `LayerZeroBridge` (future) |
 

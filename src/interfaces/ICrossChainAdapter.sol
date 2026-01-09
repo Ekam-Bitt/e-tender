@@ -11,18 +11,12 @@ interface ICrossChainAdapter {
 
     /// @notice Emitted when a bid is received from another chain
     event CrossChainBidReceived(
-        uint64 indexed sourceChainSelector,
-        address indexed sourceSender,
-        bytes32 indexed commitment,
-        bytes32 bidderId
+        uint64 indexed sourceChainSelector, address indexed sourceSender, bytes32 indexed commitment, bytes32 bidderId
     );
 
     /// @notice Emitted when a bid is sent to another chain
     event CrossChainBidSent(
-        uint64 indexed destChainSelector,
-        address indexed destTender,
-        bytes32 indexed commitment,
-        bytes32 messageId
+        uint64 indexed destChainSelector, address indexed destTender, bytes32 indexed commitment, bytes32 messageId
     );
 
     // ============ Errors ============
@@ -41,11 +35,10 @@ interface ICrossChainAdapter {
      * @param commitment The bid commitment hash
      * @return fee The estimated fee in native tokens
      */
-    function estimateFee(
-        uint64 destChainSelector,
-        address destTender,
-        bytes32 commitment
-    ) external view returns (uint256 fee);
+    function estimateFee(uint64 destChainSelector, address destTender, bytes32 commitment)
+        external
+        view
+        returns (uint256 fee);
 
     /**
      * @notice Send a bid commitment to a Tender on another chain
@@ -54,11 +47,10 @@ interface ICrossChainAdapter {
      * @param commitment The bid commitment hash
      * @return messageId The CCIP message ID for tracking
      */
-    function sendBid(
-        uint64 destChainSelector,
-        address destTender,
-        bytes32 commitment
-    ) external payable returns (bytes32 messageId);
+    function sendBid(uint64 destChainSelector, address destTender, bytes32 commitment)
+        external
+        payable
+        returns (bytes32 messageId);
 
     // ============ Receiving Functions ============
 
@@ -69,9 +61,5 @@ interface ICrossChainAdapter {
      * @param sourceSender The sender address on source chain
      * @param payload Encoded bid data
      */
-    function receiveMessage(
-        uint64 sourceChainSelector,
-        address sourceSender,
-        bytes calldata payload
-    ) external;
+    function receiveMessage(uint64 sourceChainSelector, address sourceSender, bytes calldata payload) external;
 }

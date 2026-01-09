@@ -89,9 +89,9 @@ The protocol operates as a **finite state machine** ensuring tenders progress ir
 e-tendering/
 ├── src/
 │   ├── core/              # Tender.sol, TenderFactory.sol
-│   ├── crypto/            # Hash utilities, commitment schemes
-│   ├── identity/          # Identity verifiers (address, ZK-based)
-│   ├── strategies/        # Bid evaluation strategies (ZKAuctionStrategy)
+│   ├── crypto/            # ZK verifiers (Halo2), commitment schemes
+│   ├── identity/          # Identity verifiers (signature, ZK-nullifier)
+│   ├── strategies/        # Bid evaluation (ZK, LowestPrice, Weighted)
 │   ├── compliance/        # Regulatory logging module
 │   └── interfaces/        # Contract interfaces
 ├── test/
@@ -105,6 +105,18 @@ e-tendering/
 
 ---
 
+## 📊 Evaluation Strategies
+
+At deployment, each Tender is configured with exactly one evaluation strategy:
+
+| Strategy | Purpose | When to Use |
+|----------|---------|-------------|
+| **ZKAuctionStrategy** | ZK range proofs + cryptographic validation | Privacy-preserving, spam-resistant |
+| **LowestPriceStrategy** | Lowest valid bid wins | Simple, transparent auctions |
+| **WeightedScoreStrategy** | Multi-criteria (price, delivery, compliance) | Complex procurement |
+
+📄 **[Full Strategy Documentation →](docs/STRATEGIES.md)**
+
 ## 🔒 Security Model
 
 ### Attack Vectors Mitigated
@@ -116,6 +128,15 @@ e-tendering/
 | **Retroactive Bidding** | Immutable `block.timestamp` enforces deadlines |
 | **Sybil Attacks** | Identity verifiers ensure 1-entity-1-bid |
 | **Invalid Bids** | ZK range proofs reject out-of-range values |
+
+### Identity Verification Modes
+
+The protocol supports two distinct identity verification strategies:
+
+| Verifier | Type | Description |
+|----------|------|-------------|
+| **ZKNullifierVerifier** | **Public / Permissionless** | **Open to all.** Uses Zero-Knowledge Nullifiers to enforce "One Person, One Bid" without revealing identity. Prevents spam while preserving anonymity. |
+| **SignatureVerifier** | **Permissioned** | **Restricted.** Only addresses signed by a trusted off-chain Issuer (allowlist) can participate. No anonymity guarantees. |
 
 ### Accepted Risks
 

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {ZKAuctionStrategy} from "src/strategies/ZKAuctionStrategy.sol";
-import {ZKRangeVerifier} from "src/crypto/ZKRangeVerifier.sol";
-import {Halo2Verifier} from "src/crypto/Halo2Verifier.sol";
+import { Test } from "forge-std/Test.sol";
+import { ZKAuctionStrategy } from "src/strategies/ZKAuctionStrategy.sol";
+import { ZKRangeVerifier } from "src/crypto/ZKRangeVerifier.sol";
+import { Halo2Verifier } from "src/crypto/Halo2Verifier.sol";
+import { TenderConstants } from "src/libraries/TenderConstants.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract ZKAuctionStrategyTest is Test {
     ZKAuctionStrategy public strategy;
@@ -27,10 +29,7 @@ contract ZKAuctionStrategyTest is Test {
     }
 
     function test_IsLowerBetter() public view {
-        assertFalse(
-            strategy.isLowerBetter(),
-            "Standard auction should prefer higher bids"
-        );
+        assertFalse(strategy.isLowerBetter(), "Standard auction should prefer higher bids");
     }
 
     // function test_ScoreBid_ValidProof() public {
@@ -38,30 +37,41 @@ contract ZKAuctionStrategyTest is Test {
     // The integration is verified via negative tests and flow validation.
     // }
 
+    // bytes32 constant BID_TYPEHASH ... using TenderConstants
+
+    bytes32 domainSeparator = keccak256("DOMAIN_SEPARATOR");
+
+    function getDomainSeparator() external view returns (bytes32) {
+        return domainSeparator;
+    }
+
+    function _getCommitment(uint256 amount, bytes32 salt, bytes memory metadata) internal view returns (bytes32) {
+        bytes32 metadataHash = keccak256(metadata);
+        bytes32 structHash = keccak256(abi.encode(TenderConstants.BID_TYPEHASH, amount, salt, metadataHash));
+        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+    }
+
     function test_ScoreBid_InvalidProof_Reverts() public {
         uint256 bidAmount = 50 ether;
-        // Invalid proof (too short)
         bytes memory proof = hex"1234";
+        bytes32 salt = bytes32(0);
 
-        // Should revert with Halo2Verifier error or InvalidProofStructure
-        // "InvalidProofStructure" or "ProofTooShort" etc.
-        // We know ZKAuctionStrategy catches failure and reverts "Invalid ZK Proof" if verifier returns false,
-        // BUT ZKRangeVerifier reverts on failure!
-        // So checking for revert is correct.
-        // Note: Strategy catches NOTHING, it lets verifier revert bubble up?
-        // Let's check Strategy implementation... "require(valid, ...)"
-        // ZKRangeVerifier calls VERIFIER.verify() which requires success or reverts?
-        // Halo2Verifier reverts on failure.
+        // Generate Valid Commitment so we pass the first check
+        bytes32 commitment = _getCommitment(bidAmount, salt, proof);
 
-        // So we expect a revert bubbled up from Halo2Verifier
+        // Expect revert due to invalid proof (ZK verification phase)
         vm.expectRevert();
-        strategy.scoreBid(bidAmount, proof);
+        strategy.verifyAndScoreBid(commitment, bidAmount, salt, proof, address(0));
     }
 
     function test_StrategySafeFromBypass() public {
-        // Ensure no way to submit without verification
         uint256 bidAmount = 50 ether;
+        bytes memory proof = "";
+        bytes32 salt = bytes32(0);
+        bytes32 commitment = _getCommitment(bidAmount, salt, proof);
+
+        // Expect revert due to invalid proof or empty bytes
         vm.expectRevert();
-        strategy.scoreBid(bidAmount, "");
+        strategy.verifyAndScoreBid(commitment, bidAmount, salt, proof, address(0));
     }
 }

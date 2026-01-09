@@ -5,28 +5,51 @@ import { IEvaluationStrategy } from "../interfaces/IEvaluationStrategy.sol";
 
 /**
  * @title WeightedScoreStrategy
- * @notice Complex strategy that scores based on Price, Delivery Time, and Compliance.
- * @dev Formula: Score = (Compliance * complianceWeight) - (Price * priceWeight) - (Delivery * deliveryWeight) + Offset
- *      However, to avoid large negative numbers or underflows, we use a scoring model where:
- *      Score = MaxScore - (PricePenalty + DeliveryPenalty) + ComplianceBonus
- *      Lower Price/Delivery is better. Higher Compliance is better.
+ * @author e-Tender Protocol
+ * @notice Multi-criteria evaluation strategy for tenders requiring non-price factors.
  *
- *      Let's use a simpler standard formula for "Points":
- *      Points = (MaxPrice / BidPrice) * PriceWeight + (MinDelivery / BidDelivery) * DeliveryWeight ...
- *      But division is tricky and we don't know Max/Min of other bids during individual scoring.
+ * @dev This is an OPTIONAL strategy for use cases where lowest-price-only evaluation
+ *      is insufficient. Common in government/enterprise tenders requiring:
+ *      - Technical capability assessment
+ *      - Delivery timeline commitments
+ *      - Compliance/certification scores
  *
- *      So, let's use a Linear Penalty Model (Lower is Better matches Price logic?):
- *      Score = (Price * priceWeight) + (Delivery * deliveryWeight) - (Compliance * complianceWeight)
- *      Here, "Score" is a "Cost Score". Lower is Better.
- *      High Price -> High Score (Bad)
- *      High Delivery -> High Score (Bad)
- *      High Compliance -> Low Score (Good)
+ * ## Scoring Model
  *
- *      We need to ensure (Compliance * complianceWeight) doesn't underflow the total.
- *      So: Score = (Price * P_w) + (Delivery * D_w) + (MaxCompliance - Compliance) * C_w.
- *      This ensures all terms are positive penalties.
+ * Uses a Linear Penalty Model where LOWER score = BETTER bid:
+ *
+ *   Score = (Price × PriceWeight) + (Delivery × DeliveryWeight) + ((MaxCompliance - Compliance) × ComplianceWeight)
+ *
+ * This ensures all terms are positive (no underflow risk) and:
+ * - Higher Price → Higher Score (worse)
+ * - Longer Delivery → Higher Score (worse)
+ * - Higher Compliance → Lower Score (better)
+ *
+ * ## Usage Example
+ *
+ * ```solidity
+ * // Deploy with weights: Price=1, Delivery=2, Compliance=5
+ * WeightedScoreStrategy strategy = new WeightedScoreStrategy(1, 2, 5);
+ *
+ * // Bidder submits: Price=100 ETH, Delivery=30 days, Compliance=85%
+ * bytes memory metadata = abi.encode(uint256(30), uint256(85));
+ * uint256 score = strategy.scoreBid(100 ether, metadata);
+ * // Score = 100 + 60 + 75 = 235 (lower wins)
+ * ```
+ *
+ * ## Metadata Format
+ *
+ * `abi.encode(uint256 deliveryTime, uint256 complianceScore)`
+ * - deliveryTime: Time units (days, hours, etc.) - lower is better
+ * - complianceScore: 0-100 scale - higher is better
  */
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import { ITenderHelper } from "../interfaces/ITenderHelper.sol";
+import { TenderConstants } from "../libraries/TenderConstants.sol";
+
 contract WeightedScoreStrategy is IEvaluationStrategy {
+    // bytes32 constant BID_TYPEHASH = ...; // Use TenderConstants
+
     uint256 public immutable PRICE_WEIGHT;
     uint256 public immutable DELIVERY_WEIGHT;
     uint256 public immutable COMPLIANCE_WEIGHT;
@@ -43,16 +66,32 @@ contract WeightedScoreStrategy is IEvaluationStrategy {
     /**
      * @notice Metadata expected: abi.encode(uint256 deliveryTime, uint256 complianceScore)
      */
-    function scoreBid(uint256 amount, bytes calldata metadata) external view override returns (uint256) {
+    function verifyAndScoreBid(
+        bytes32 commitment,
+        uint256 amount,
+        bytes32 salt,
+        bytes calldata metadata,
+        address /*bidder*/
+    )
+        external
+        view
+        override
+        returns (uint256)
+    {
+        // 1. Verification
+        bytes32 metadataHash = keccak256(metadata);
+        bytes32 structHash = keccak256(abi.encode(TenderConstants.BID_TYPEHASH, amount, salt, metadataHash));
+        bytes32 domainSeparator = ITenderHelper(msg.sender).getDomainSeparator();
+        bytes32 digest = MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+        require(digest == commitment, "Invalid Commitment");
+
+        // 2. Scoring
         if (metadata.length < 64) {
-            // Invalid metadata, return max penalty (worst score)
             return type(uint256).max;
         }
 
         (uint256 deliveryTime, uint256 complianceScore) = abi.decode(metadata, (uint256, uint256));
 
-        // Cap compliance to max to prevent underflow hacks if we used subtraction directly,
-        // but here we use (MAX - Compliance).
         if (complianceScore > MAX_COMPLIANCE) {
             complianceScore = MAX_COMPLIANCE;
         }

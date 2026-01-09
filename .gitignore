@@ -19,8 +19,10 @@ node_modules/
 # Rust/Cargo (circuits/)
 circuits/target/
 circuits/keys/
+params/
 *.proof
 *.bin
+*.zkproof
 
 # ZK ceremony files
 *.ptau

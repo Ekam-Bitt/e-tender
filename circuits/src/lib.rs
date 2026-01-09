@@ -1,10 +1,14 @@
-//! Halo2 Range Proof Circuit for e-Tendering Protocol
+//! Halo2 Circuits for e-Tendering Protocol
 //!
-//! This library provides a zero-knowledge range proof circuit that proves:
-//! `min_bid <= bid_value <= max_bid` without revealing the actual values.
+//! Production-grade ZK circuits using Axiom's halo2-lib and snark-verifier-sdk.
 
-pub mod range_proof;
-pub mod verifier_sol;
-pub mod merkle_circuit;
+// Re-export halo2 types
+pub use halo2_base::halo2_proofs;
+pub use snark_verifier_sdk;
 
-pub use range_proof::RangeProofCircuit;
+pub mod range_circuit;
+pub mod nullifier_circuit;
+pub mod verifier;
+
+pub use range_circuit::RangeProofCircuit;
+pub use nullifier_circuit::build_nullifier_circuit;

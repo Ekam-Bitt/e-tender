@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import { Test } from "forge-std/Test.sol";
 import { Tender } from "src/core/Tender.sol";
 import { TenderFactory } from "src/core/TenderFactory.sol";
+import { TenderConstants } from "src/libraries/TenderConstants.sol";
 import { SignatureVerifier } from "src/identity/SignatureVerifier.sol";
 import { LowestPriceStrategy } from "src/strategies/LowestPriceStrategy.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -25,7 +26,7 @@ contract TenderTest is Test {
     uint256 bidBond = 1 ether;
     string configHash = "QmTestHash";
 
-    bytes32 constant BID_TYPEHASH = keccak256("Bid(uint256 amount,bytes32 salt,bytes32 metadataHash)");
+    // bytes32 constant BID_TYPEHASH ... using TenderConstants
 
     function setUp() public {
         vm.startPrank(authority);
@@ -34,10 +35,18 @@ contract TenderTest is Test {
         factory = TenderFactory(address(proxy));
 
         priceStrategy = new LowestPriceStrategy();
+        signatureVerifier = new SignatureVerifier(authority);
 
         uint256 challengePeriod = 1 days;
         address tenderAddr = factory.createTender(
-            address(0), address(priceStrategy), configHash, biddingTime, revealTime, challengePeriod, bidBond
+            Tender.IdentityMode.NONE,
+            address(0),
+            address(priceStrategy),
+            configHash,
+            biddingTime,
+            revealTime,
+            challengePeriod,
+            bidBond
         );
         tender = Tender(tenderAddr);
 
@@ -46,7 +55,7 @@ contract TenderTest is Test {
 
     // Helper to generate EIP-712 Commitment
     function getCommitment(uint256 amount, bytes32 salt, bytes32 metadataHash) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(abi.encode(BID_TYPEHASH, amount, salt, metadataHash));
+        bytes32 structHash = keccak256(abi.encode(TenderConstants.BID_TYPEHASH, amount, salt, metadataHash));
         return MessageHashUtils.toTypedDataHash(tender.getDomainSeparator(), structHash);
     }
 
@@ -72,6 +81,16 @@ contract TenderTest is Test {
         vm.deal(bidder1, 2 ether);
         bytes32[] memory emptySignals = new bytes32[](0);
         vm.prank(bidder1);
+
+        // Expect IdentityVerificationBypassed event for monitoring
+        vm.expectEmit(false, false, false, false);
+        emit Tender.IdentityVerificationBypassed();
+        // We also expect BidSubmitted, but expectEmit checks the *next* event?
+        // Or strictly the sequence? Foundry checks *at least* these logs.
+        // Actually expectEmit checks the NEXT emitted event.
+        // IdentityVerificationBypassed is emitted BEFORE BidSubmitted (line 115 vs 137).
+        // So we should expect it.
+
         tender.submitBid{ value: bidBond }(commitment, "", emptySignals);
 
         bytes32 bidderId = _getBidderId(bidder1);
@@ -207,5 +226,63 @@ contract TenderTest is Test {
         assertEq(uint256(tender.state()), uint256(Tender.TenderState.AWARDED));
         bytes32 expectedWinnerId = _getBidderId(bidder2);
         assertEq(tender.winningBidderId(), expectedWinnerId);
+    }
+
+    function testIdentityModeValidation() public {
+        vm.startPrank(authority);
+
+        // 1. Invalid: NONE mode but Verifier provided
+        vm.expectRevert("Tender: NONE mode requires zero verifier");
+        factory.createTender(
+            Tender.IdentityMode.NONE,
+            address(0x123), // Invalid: should be 0
+            address(priceStrategy),
+            configHash,
+            biddingTime,
+            revealTime,
+            1 days,
+            bidBond
+        );
+
+        // 2. Invalid: SIGNATURE mode but Zero Verifier
+        vm.expectRevert("Tender: Verifier required for non-NONE mode");
+        factory.createTender(
+            Tender.IdentityMode.SIGNATURE,
+            address(0), // Invalid: should be non-zero
+            address(priceStrategy),
+            configHash,
+            biddingTime,
+            revealTime,
+            1 days,
+            bidBond
+        );
+
+        // 3. Invalid: ZK_NULLIFIER mode but Zero Verifier
+        vm.expectRevert("Tender: Verifier required for non-NONE mode");
+        factory.createTender(
+            Tender.IdentityMode.ZK_NULLIFIER,
+            address(0), // Invalid: should be non-zero
+            address(priceStrategy),
+            configHash,
+            biddingTime,
+            revealTime,
+            1 days,
+            bidBond
+        );
+
+        // 4. Valid: SIGNATURE mode with Verifier (ensure it works)
+        address tenderSign = factory.createTender(
+            Tender.IdentityMode.SIGNATURE,
+            address(signatureVerifier),
+            address(priceStrategy),
+            configHash,
+            biddingTime,
+            revealTime,
+            1 days,
+            bidBond
+        );
+        assertEq(uint256(Tender(tenderSign).IDENTITY_MODE()), uint256(Tender.IdentityMode.SIGNATURE));
+
+        vm.stopPrank();
     }
 }

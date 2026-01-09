@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IIdentityVerifier} from "../interfaces/IIdentityVerifier.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {
-    MessageHashUtils
-} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import { IIdentityVerifier } from "../interfaces/IIdentityVerifier.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title SignatureVerifier
@@ -52,10 +50,7 @@ contract SignatureVerifier is IIdentityVerifier, Ownable {
      * @param proof The signature (r, s, v).
      * @param publicSignals Array where index 0 is the user address (as bytes32).
      */
-    function verify(
-        bytes calldata proof,
-        bytes32[] calldata publicSignals
-    ) external view override returns (bool) {
+    function verify(bytes calldata proof, bytes32[] calldata publicSignals) external view override returns (bool) {
         if (publicSignals.length < 1) return false;
 
         address user = address(uint160(uint256(publicSignals[0])));
@@ -64,9 +59,7 @@ contract SignatureVerifier is IIdentityVerifier, Ownable {
 
         // Reconstruct message: Keccak256(user). High-level for readability.
         bytes32 messageHash = keccak256(abi.encodePacked(user));
-        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(
-            messageHash
-        );
+        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
 
         address signer = ethSignedMessageHash.recover(proof);
 
